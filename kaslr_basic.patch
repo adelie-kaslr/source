@@ -1,0 +1,3715 @@
+diff -urN linux-5.0.2/arch/x86/include/asm/bug.h linux-5.0.2-kaslr/arch/x86/include/asm/bug.h
+--- linux-5.0.2/arch/x86/include/asm/bug.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/arch/x86/include/asm/bug.h	2019-10-26 00:46:58.580840157 -0400
+@@ -28,7 +28,7 @@
+ # define __BUG_REL(val)	".long " __stringify(val) " - 2b"
+ #endif
+ 
+-#ifdef CONFIG_DEBUG_BUGVERBOSE
++#if defined(CONFIG_DEBUG_BUGVERBOSE) && !defined(__clang__)
+ 
+ #define _BUG_FLAGS(ins, flags)						\
+ do {									\
+@@ -40,7 +40,7 @@
+ 		     "\t.word %c2"        "\t# bug_entry::flags\n"	\
+ 		     "\t.org 2b+%c3\n"					\
+ 		     ".popsection"					\
+-		     : : "i" (__FILE__), "i" (__LINE__),		\
++		     : : "X" (__FILE__), "i" (__LINE__),		\
+ 			 "i" (flags),					\
+ 			 "i" (sizeof(struct bug_entry)));		\
+ } while (0)
+diff -urN linux-5.0.2/arch/x86/include/asm/elf.h linux-5.0.2-kaslr/arch/x86/include/asm/elf.h
+--- linux-5.0.2/arch/x86/include/asm/elf.h	2019-10-26 00:46:25.848841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/include/asm/elf.h	2019-10-26 00:46:58.580840157 -0400
+@@ -64,7 +64,8 @@
+ #define R_X86_64_8		14	/* Direct 8 bit sign extended  */
+ #define R_X86_64_PC8		15	/* 8 bit sign extended pc relative */
+ #define R_X86_64_PC64		24	/* Place relative 64-bit signed */
+-
++#define R_X86_64_GOTOFF64	25
++#define R_X86_64_GOTPC32	26
+ #define R_X86_64_GOTPCRELX	41	/* Relaxed R_X86_64_GOTPCREL */
+ #define R_X86_64_REX_GOTPCRELX	42	/* ... with the REX prefix */
+ 
+diff -urN linux-5.0.2/arch/x86/include/asm/module.h linux-5.0.2-kaslr/arch/x86/include/asm/module.h
+--- linux-5.0.2/arch/x86/include/asm/module.h	2019-10-26 00:46:25.848841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/include/asm/module.h	2019-10-26 00:46:58.580840157 -0400
+@@ -4,6 +4,114 @@
+ 
+ #include <asm-generic/module.h>
+ #include <asm/orc_types.h>
++#include <asm/asm.h>
++#include <smr/smr.h>
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++
++void init_profile_rand(void);
++void print_profile_rand(void);
++struct Profile_Rand {
++	u64 count_rand;
++	u64 count_smr_retire;
++	u64 count_smr_free;
++	u64 count_stack_alloc;
++	u64 count_stack_free;
++};
++extern struct Profile_Rand profile_rand;
++
++void *module_rerandomize(struct module *mod);
++void module_unmap(struct module *mod, void *addr);
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++void module_init_stacks(void);
++void module_rerandomize_stack(void);
++void module_stack_empty_trash(void);
++void * module_get_stack(void);
++void module_offer_stack(void *);
++#endif /* CONFIG_X86_MODULE_RERANDOMIZE_STACK */
++
++#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
++#define printp(x) printk("(%s.%03d): " #x " = 0x%lx\n", __FILENAME__, __LINE__, (unsigned long)(x))
++#define INC_BY_DELTA(x, delta) ( x = (typeof((x))) ((unsigned long)(x) + (unsigned long)(delta)) )
++
++
++/* Places the variable in a special section
++ * Makes visibility default */
++#define SPECIAL_VAR(x) x __attribute__ ((section (".fixed.data")))
++#define SPECIAL_CONST_VAR(x) x __attribute__ ((section (".fixed.rodata")))
++
++
++#define SPECIAL_FUNCTION_PROTO(ret, name, args...)  \
++	noinline ret __attribute__ ((section (".fixed.text"))) __attribute__((naked)) name(args)
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++#define MOD_GET_STACK()                                 \
++	asm (_ASM_CALL(module_get_stack));              \
++	asm ("mov %rax, %rsp")
++#define MOD_OFFER_STACK()                               \
++	asm ("mov %rsp, %rdi");                         \
++	asm ("lea -0x40(%rbp), %rsp")
++#define MOD_OFFER_STACK_CALL()                          \
++	asm (_ASM_CALL(module_offer_stack))
++#else
++#define MOD_GET_STACK()
++#define MOD_OFFER_STACK()
++#define MOD_OFFER_STACK_CALL()
++#endif
++
++#define SPECIAL_FUNCTION(ret, name, args...) \
++_Pragma("GCC diagnostic push") \
++_Pragma("GCC diagnostic ignored \"-Wreturn-type\"") \
++_Pragma("GCC diagnostic ignored \"-Wattributes\"") \
++ret __attribute__ ((visibility("hidden"))) name## _ ##real(args);\
++SPECIAL_FUNCTION_PROTO(ret, name, args) {               \
++	/* Save base pointer */                         \
++	asm ("push %rbp");                              \
++	asm ("mov %rsp, %rbp");                         \
++	/* Save Args */                                 \
++	asm ("push %rdi");                              \
++	asm ("push %rsi");                              \
++	asm ("push %rdx");                              \
++	asm ("push %rcx");                              \
++	asm ("push %r8");                               \
++	asm ("push %r9");                               \
++	/* Call smr_enter save return */                \
++	asm (_ASM_CALL(smr_enter));                     \
++	asm ("push %rax");                              \
++	asm ("push %rdx");                              \
++	/* Get new stack */                             \
++	MOD_GET_STACK();                                \
++	/* Restore Args*/                               \
++	asm ("mov -0x30(%rbp), %r9");                   \
++	asm ("mov -0x28(%rbp), %r8");                   \
++	asm ("mov -0x20(%rbp), %rcx");                  \
++	asm ("mov -0x18(%rbp), %rdx");                  \
++	asm ("mov -0x10(%rbp), %rsi");                  \
++	asm ("mov -0x8(%rbp), %rdi");                   \
++	asm (_ASM_CALL(name## _ ##real));               \
++	/* Restore old stack */                         \
++	MOD_OFFER_STACK();                              \
++	asm ("mov %rax, %rbp");                         \
++	MOD_OFFER_STACK_CALL();                         \
++	/* Prepare smr_leave args */                    \
++	asm ("pop %rsi");                               \
++	asm ("pop %rdi");                               \
++	asm ("add $48, %rsp");				\
++	asm (_ASM_CALL(smr_leave));                     \
++	asm ("mov %rbp, %rax");                         \
++	/* Restore base pointer */                      \
++	asm ("pop %rbp");                               \
++	asm ("ret");                                    \
++} \
++_Pragma("GCC diagnostic pop") \
++ret name## _ ##real(args)
++#else /* !CONFIG_X86_MODULE_RERANDOMIZE */
++#define SPECIAL_VAR(x) x
++#define SPECIAL_CONST_VAR(x) x
++#define SPECIAL_FUNCTION_PROTO(ret, name, args...) ret name (args)
++#define SPECIAL_FUNCTION(ret, name, args...) ret name (args)
++#endif /* CONFIG_X86_MODULE_RERANDOMIZE */
+ 
+ extern const char __THUNK_FOR_PLT[];
+ extern const unsigned int __THUNK_FOR_PLT_SIZE;
+@@ -20,14 +128,11 @@
+ #endif
+ } __packed __aligned(PLT_ENTRY_ALIGNMENT);
+ 
+-struct mod_got_sec {
++struct mod_sec {
+ 	struct elf64_shdr	*got;
++	struct elf64_shdr	*plt;
+ 	int			got_num_entries;
+ 	int			got_max_entries;
+-};
+-
+-struct mod_plt_sec {
+-	struct elf64_shdr	*plt;
+ 	int			plt_num_entries;
+ 	int			plt_max_entries;
+ };
+@@ -38,8 +143,10 @@
+ 	int *orc_unwind_ip;
+ 	struct orc_entry *orc_unwind;
+ #endif
+-	struct mod_got_sec	core;
+-	struct mod_plt_sec	core_plt;
++	struct mod_sec	core;
++	struct mod_sec	rand;
++	struct mod_sec	fixed;
++	struct mod_sec	fixed_rand;
+ };
+ 
+ #ifdef CONFIG_X86_64
+diff -urN linux-5.0.2/arch/x86/include/asm/paravirt_types.h linux-5.0.2-kaslr/arch/x86/include/asm/paravirt_types.h
+--- linux-5.0.2/arch/x86/include/asm/paravirt_types.h	2019-10-26 00:46:25.848841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/include/asm/paravirt_types.h	2019-10-26 00:46:58.580840157 -0400
+@@ -343,16 +343,27 @@
+ 	(offsetof(struct paravirt_patch_template, x) / sizeof(void *))
+ 
+ #if defined(CONFIG_X86_PIE) || (defined(MODULE) && defined(CONFIG_X86_PIC))
+-#define paravirt_opptr_call "a"
+-#define paravirt_opptr_type "p"
++#ifdef __clang__
++  #define paravirt_opptr_call ""
++  #define paravirt_opptr_type "m"
++#else
++  #define paravirt_opptr_call "a"
++  #define paravirt_opptr_type "p"
++#endif
+ #else
+ #define paravirt_opptr_call "c"
+ #define paravirt_opptr_type "i"
+ #endif
+ 
++#ifdef __clang__
++#define paravirt_type(op)				\
++	[paravirt_typenum] "i" (PARAVIRT_PATCH(op)),	\
++	[paravirt_opptr] paravirt_opptr_type ((op))
++#else
+ #define paravirt_type(op)				\
+ 	[paravirt_typenum] "i" (PARAVIRT_PATCH(op)),	\
+ 	[paravirt_opptr] paravirt_opptr_type (&(pv_ops.op))
++#endif
+ #define paravirt_clobber(clobber)		\
+ 	[paravirt_clobber] "i" (clobber)
+ 
+diff -urN linux-5.0.2/arch/x86/Kconfig linux-5.0.2-kaslr/arch/x86/Kconfig
+--- linux-5.0.2/arch/x86/Kconfig	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/Kconfig	2019-10-26 00:46:58.580840157 -0400
+@@ -2244,6 +2244,32 @@
+ 	select DYNAMIC_MODULE_BASE
+ 	select MODULE_REL_CRCS if MODVERSIONS
+ 
++# Reasons for dependencies
++# KALLSYMS_ALL - For preserving symbol table
++config X86_MODULE_RERANDOMIZE
++	bool
++	prompt "Enable X86 modules rerandomization"
++	depends on X86_PIC && KALLSYMS_ALL && RANDOMIZE_BASE
++	default y
++	---help---
++	  Allow runtime rerandomization of modules.
++
++config X86_MODULE_RERANDOMIZE_STACK
++	bool
++	prompt "Enable X86 modules stack rerandomization"
++	depends on X86_MODULE_RERANDOMIZE
++	default y
++	---help---
++	  Allow runtime rerandomization of modules stack.
++
++config X86_MODULE_RERANDOMIZER
++	tristate
++	prompt "Module Rerandomization Trigger"
++	depends on X86_MODULE_RERANDOMIZE
++	default m
++	---help---
++	  Creates a thread for module randomization.
++
+ config X86_PIC
+ 	bool
+ 	prompt "Enable PIC modules"
+diff -urN linux-5.0.2/arch/x86/kernel/Makefile linux-5.0.2-kaslr/arch/x86/kernel/Makefile
+--- linux-5.0.2/arch/x86/kernel/Makefile	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/kernel/Makefile	2019-10-26 00:46:58.580840157 -0400
+@@ -105,7 +105,7 @@
+ obj-$(CONFIG_KEXEC_FILE)	+= kexec-bzimage64.o
+ obj-$(CONFIG_CRASH_DUMP)	+= crash_dump_$(BITS).o
+ obj-y				+= kprobes/
+-obj-$(CONFIG_MODULES)		+= module.o module-plt-stub.o
++obj-$(CONFIG_MODULES)		+= module.o module-plt-stub.o module_stack.o
+ OBJECT_FILES_NON_STANDARD_module-plt-stub.o := y
+ obj-$(CONFIG_DOUBLEFAULT)	+= doublefault.o
+ obj-$(CONFIG_KGDB)		+= kgdb.o
+diff -urN linux-5.0.2/arch/x86/kernel/module.c linux-5.0.2-kaslr/arch/x86/kernel/module.c
+--- linux-5.0.2/arch/x86/kernel/module.c	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/kernel/module.c	2019-10-26 00:55:36.445479974 -0400
+@@ -21,6 +21,7 @@
+ #include <linux/moduleloader.h>
+ #include <linux/elf.h>
+ #include <linux/vmalloc.h>
++#include <linux/slab.h>
+ #include <linux/fs.h>
+ #include <linux/string.h>
+ #include <linux/kernel.h>
+@@ -38,9 +39,41 @@
+ #include <asm/setup.h>
+ #include <asm/unwind.h>
+ #include <asm/insn.h>
++#include "../../../kernel/smr/lfsmr.h"
++
++struct Profile_Rand profile_rand;
++EXPORT_SYMBOL(profile_rand);
++
++void init_profile_rand(void)
++{
++	memset(&profile_rand, 0, sizeof(profile_rand));
++}
++EXPORT_SYMBOL(init_profile_rand);
++
++void print_profile_rand(void)
++{
++	printk("-----\n");
++	printk("Randomized %llu times\n", profile_rand.count_rand);
++
++	printk("SMR Retire: %llu\n", profile_rand.count_smr_retire);
++	printk("SMR Free: %llu\n", profile_rand.count_smr_free);
++	printk("SMR Delta: %llu\n", profile_rand.count_smr_retire - profile_rand.count_smr_free);
++
++	printk("Stack Alloc: %llu\n", profile_rand.count_stack_alloc);
++	printk("Stack Free: %llu\n", profile_rand.count_stack_free);
++	printk("Stack Delta: %llu\n", profile_rand.count_stack_alloc - profile_rand.count_stack_free);
++}
++EXPORT_SYMBOL(print_profile_rand);
+ 
+ static unsigned int module_plt_size;
+ 
++static int apply_relocate_add__(Elf64_Shdr *sechdrs,
++		   const char *strtab,
++		   unsigned int symindex,
++		   unsigned int relsec,
++		   struct module *me,
++		   bool check);
++
+ #if 0
+ #define DEBUGP(fmt, ...)				\
+ 	printk(KERN_DEBUG fmt, ##__VA_ARGS__)
+@@ -63,11 +96,12 @@
+ 	if (kaslr_enabled()) {
+ 		mutex_lock(&module_kaslr_mutex);
+ 		/*
+-		 * Calculate the module_load_offset the first time this
+-		 * code is called. Once calculated it stays the same until
+-		 * reboot.
++		 * Recalculate the module_load_offset only when
++		 * rerandomization is enabled.
+ 		 */
++#ifndef CONFIG_X86_MODULE_RERANDOMIZE
+ 		if (module_load_offset == 0)
++#endif
+ 			module_load_offset =
+ 				(get_random_int() % 1024 + 1) * PAGE_SIZE;
+ 		mutex_unlock(&module_kaslr_mutex);
+@@ -105,10 +139,360 @@
+ 	return sym->st_shndx != SHN_UNDEF;
+ }
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++static void module_print_addresses(struct module *mod);
++
++static char *module_get_section_name(struct module *mod, unsigned int shnum)
++{
++	if (shnum == SHN_UNDEF || shnum > mod->klp_info->hdr.e_shnum)
++		return "";
++
++	return mod->klp_info->secstrings +
++				mod->klp_info->sechdrs[shnum].sh_name;
++}
++
++bool module_is_fixed_section_name(const char *sname){
++	return (strstarts(sname, ".fixed")
++			|| strstarts(sname, ".gnu.linkonce.this_module")
++			|| strstarts(sname, "__param")
++//			|| strstarts(sname, ".rodata")
++			|| strstarts(sname, ".data.rel.ro")
++		);
++}
++
++bool module_is_fixed_section(struct module *mod, unsigned int shnum)
++{
++	char *sname;
++
++	if (!is_randomizable_module(mod))
++		return false;
++
++	if (shnum == SHN_UNDEF || shnum > mod->klp_info->hdr.e_shnum)
++		return true;
++
++	sname = mod->klp_info->secstrings +
++				mod->klp_info->sechdrs[shnum].sh_name;
++
++	return module_is_fixed_section_name(sname);
++}
++
++static inline bool is_rand_symbol(struct module *mod, Elf64_Sym *sym)
++{
++	if (!is_randomizable_module(mod) || !is_local_symbol(sym))
++		return false;
++
++	return !module_is_fixed_section(mod, sym->st_shndx);
++}
++
++static unsigned int nullify_relocations_rel(unsigned int relsec, struct module *mod)
++{
++	unsigned int i;
++	Elf_Shdr *sechdrs = mod->klp_info->sechdrs;
++	Elf64_Rela *rel = (void *)sechdrs[relsec].sh_addr;
++	unsigned int symindex = mod->klp_info->symndx;
++	unsigned int symsec;
++	bool isSecFixed = module_is_fixed_section(mod, mod->klp_info->sechdrs[relsec].sh_info);
++	bool isSymFixed;
++	Elf64_Sym *sym;
++	int relocations_removed = 0;
++	char *sname = module_get_section_name(mod, relsec);
++
++	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
++		sym = (Elf64_Sym *)sechdrs[symindex].sh_addr
++			+ ELF64_R_SYM(rel[i].r_info);
++		symsec = sym->st_shndx;
++		isSymFixed = module_is_fixed_section(mod, symsec);
++
++		switch (ELF64_R_TYPE(rel[i].r_info)) {
++		case R_X86_64_64:
++			if (isSymFixed)
++				goto remove_relocation;
++			else
++				break;
++		case R_X86_64_PC64:
++		case R_X86_64_PC32:
++			if (isSecFixed ^ isSymFixed) {
++				/* In different sections */
++				pr_err("Found un-randomizable PCxx relocation in %s, type %d, symbol num %d\n",
++						sname, (int)ELF64_R_TYPE(rel[i].r_info), (int)ELF64_R_SYM(rel[i].r_info));
++				break;
++			}
++		case R_X86_64_REX_GOTPCRELX:
++		case R_X86_64_GOTPCRELX:
++		case R_X86_64_GOTPCREL:
++		case R_X86_64_PLT32:
++		case R_X86_64_NONE:
++remove_relocation:
++			relocations_removed++;
++			rel[i].r_info = 0;
++			break;
++		}
++	}
++
++	return relocations_removed;
++}
++
++/* Remove relocation that are not needed in the
++ * re-randomization process */
++static void nullify_relocations(struct module *mod)
++{
++	unsigned int i, infosec;
++	char *sname;
++
++	printk("%s: nullify_relocations\n", mod->name);
++
++	for (i = 1; i < mod->klp_info->hdr.e_shnum; i++) {
++		if(mod->klp_info->sechdrs[i].sh_type != SHT_RELA)
++			continue;
++
++		infosec = mod->klp_info->sechdrs[i].sh_info;
++		sname = module_get_section_name(mod, i);
++
++		/* Not a valid relocation section */
++		if (infosec >= mod->klp_info->hdr.e_shnum
++			  /* init sections are not used anymore */
++			  || strstarts(sname, ".rela.init")
++			  || strstarts(sname, ".rela.altinstructions")
++			  /* Livepatch relocation sections are applied by livepatch */
++			  || mod->klp_info->sechdrs[i].sh_flags & SHF_RELA_LIVEPATCH
++			  /* Don't bother with non-allocated sections */
++			  || !(mod->klp_info->sechdrs[infosec].sh_flags & SHF_ALLOC)) {
++			printk("%s nullified\n", sname);
++			mod->klp_info->sechdrs[i].sh_type = SHT_NULL;
++		} else {
++			unsigned int total_relocations =
++					mod->klp_info->sechdrs[i].sh_size / sizeof(Elf64_Rela);
++			unsigned int relocations_removed =
++					nullify_relocations_rel(i, mod);
++			if (total_relocations == relocations_removed) {
++				printk("%s nullified\n", sname);
++				mod->klp_info->sechdrs[i].sh_type = SHT_NULL;
++			} else {
++				printk("%s relocations removed = %d/%d\n", sname, relocations_removed, total_relocations);
++			}
++		}
++
++	}
++}
++
++int module_arch_preinit(struct module *mod)
++{
++	Elf_Shdr *sechdrs;
++	char *secstrings;
++	unsigned int i;
++
++	if (!is_randomizable_module(mod)) return 0;
++
++	sechdrs = mod->klp_info->sechdrs;
++	secstrings = mod->klp_info->secstrings;
++
++	mod->arch.rand.got = mod->arch.fixed.got = mod->arch.fixed_rand.got = NULL;
++	mod->arch.rand.plt = mod->arch.fixed.plt = mod->arch.fixed_rand.plt = NULL;
++
++	/* Find GOTs and PLTs */
++	for (i = 0; i < mod->klp_info->hdr.e_shnum; i++) {
++		if (!strcmp(secstrings + sechdrs[i].sh_name, ".got.rand")) {
++			mod->arch.rand.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.got")) {
++			mod->arch.fixed.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.got.rand")) {
++			mod->arch.fixed_rand.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".plt.rand")) {
++			mod->arch.rand.plt = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.plt")) {
++			mod->arch.fixed.plt = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.plt.rand")) {
++			mod->arch.fixed_rand.plt = sechdrs + i;
++		}
++	}
++
++	if (!mod->arch.rand.got || !mod->arch.fixed.got || !mod->arch.fixed_rand.got || !mod->arch.fixed.plt || !mod->arch.fixed_rand.plt || !mod->arch.rand.plt)
++		return -ENOEXEC;
++
++	module_disable_ro(mod);
++	nullify_relocations(mod);
++	module_enable_ro(mod, false);
++
++	/* TODO: Remove */
++//	module_print_addresses(mod);
++
++	return 0;
++}
++
++static void module_reapply_relocations(struct module *mod, unsigned long delta)
++{
++	unsigned int i;
++
++	for (i = 1; i < mod->klp_info->hdr.e_shnum; i++) {
++		if(mod->klp_info->sechdrs[i].sh_type != SHT_RELA)
++			continue;
++
++		apply_relocate_add__(mod->klp_info->sechdrs, mod->kallsyms->strtab,
++			mod->klp_info->symndx, i, mod, false);
++	}
++}
++
++/* Update all randomized symbols in the symbol table. */
++static void module_update_symbols(struct module *mod, unsigned long delta)
++{
++	unsigned int i;
++	Elf64_Shdr *sym_sechdr = mod->klp_info->sechdrs + mod->klp_info->symndx;
++	Elf64_Sym *syms = (Elf64_Sym *)sym_sechdr->sh_addr;
++	unsigned int num_syms = sym_sechdr->sh_size / sizeof(*syms);
++
++	for (i = 0; i < num_syms; i++) {
++		if (is_rand_symbol(mod, &syms[i])) {
++//			printk("  i=%u, sec=%u\n", i, syms[i].st_shndx);
++			INC_BY_DELTA(syms[i].st_value, delta);
++		}
++	}
++}
++
++/* Update all symbols in GOT
++ * GOT should only contain randomized symbols */
++static void module_update_got(struct module *mod, struct mod_sec *gotsec,
++		unsigned long delta, unsigned long table_delta)
++{
++	unsigned int i;
++	u64 *got_new = (u64*)gotsec->got->sh_addr;
++	u64 *got_old = (u64*)(gotsec->got->sh_addr - table_delta);
++
++	for(i=0; i < gotsec->got_num_entries; i++){
++		got_new[i] = got_old[i] + delta;
++	}
++}
++
++static void module_print_addresses(struct module *mod)
++{
++	unsigned int i;
++
++	printk("core_layout.base  = 0x%lx | 0x%x\n",
++			(unsigned long)mod->core_layout.base, mod->core_layout.size);
++	printk("fixed_layout.base = 0x%lx | 0x%x\n",
++			(unsigned long)mod->fixed_layout.base,mod->fixed_layout.size);
++	printk("init_layout.base  = 0x%lx | 0x%x\n",
++			(unsigned long)mod->init_layout.base, mod->init_layout.size);
++
++	for (i = 1; i < mod->klp_info->hdr.e_shnum; i++) {
++		printk("%s\t= 0x%llx | 0x%llx\n", mod->klp_info->secstrings +
++				mod->klp_info->sechdrs[i].sh_name, mod->klp_info->sechdrs[i].sh_addr,
++				mod->klp_info->sechdrs[i].sh_size);
++	}
++}
++
++//#define printp(x) printk("%d." #x " = 0x%lx\n", __LINE__, (unsigned long)x)
++
++void *module_newmap(struct module *mod, void *addr, unsigned long size)
++{
++	void *new_addr;
++	struct mod_sec *gotsec = &mod->arch.rand;
++	unsigned long got_addr = gotsec->got->sh_addr;
++	unsigned long got_size = gotsec->got->sh_size;
++
++//	printp(addr);
++//	printp(got_addr);
++//	printp(size);
++//	printp(got_size);
++
++	got_size = 0; // todo: remove
++	new_addr = remap_module((unsigned long)addr, size, got_addr, got_size,
++				    MODULE_ALIGN,
++				    MODULES_VADDR + get_module_load_offset(),
++				    MODULES_END, GFP_KERNEL,
++				    PAGE_KERNEL_EXEC, 0, NUMA_NO_NODE,
++				    __builtin_return_address(0));
++
++//	new_addr = module_alloc(size);
++//	memcpy(new_addr, addr, size);
++
++	return new_addr;
++}
++
++void module_unmap(struct module *mod, void *addr)
++{
++	struct mod_sec *gotsec = &mod->arch.rand;
++	void *got_addr = gotsec->got->sh_addr -
++			(unsigned long) mod->core_layout.base + addr;
++	unsigned long got_size = gotsec->got->sh_size;
++
++	// printk("Memory Freed %lx\n", (unsigned long) addr);
++
++	got_size = 0; // todo: remove
++	unmap_module(addr, got_addr, got_size);
++//	vfree(addr);
++}
++
++void *module_rerandomize(struct module *mod)
++{
++	unsigned long delta;
++	void *new_addr;
++	unsigned long size = mod->core_layout.size;
++	void *addr = mod->core_layout.base;
++
++	if(!is_randomizable_module(mod)) return NULL;
++
++	new_addr = module_newmap(mod, addr, size);
++	if(new_addr == NULL) {
++		return NULL;
++	}
++
++	// Clear permission of old address space
++	module_disable_ro(mod);
++	module_disable_nx(mod);
++
++	delta = (unsigned long) (new_addr - addr);
++//	printk("delta = %ld = %lu = 0x%lx\n", delta, delta, delta);
++
++	// Update kernel's pointer to this module
++	update_module_ref(mod, delta);
++
++	// Set permission of new address space
++	module_enable_nx(mod);
++
++//	module_print_addresses(mod);
++
++	module_disable_ro(mod);
++	module_update_symbols(mod, delta);
++	module_update_got(mod, &mod->arch.rand, delta, delta);
++	module_reapply_relocations(mod, delta);
++	module_update_got(mod, &mod->arch.fixed_rand, delta, 0);
++	module_enable_ro(mod, true);
++
++	if (mod->rerandomize)
++		mod->rerandomize(delta);
++
++	smr_retire(mod, addr);
++
++	return new_addr;
++}
++EXPORT_SYMBOL_GPL(module_rerandomize);
++
++#else /* !CONFIG_X86_MODULE_RERANDOMIZE */
++static inline bool is_rand_symbol(struct module *mod, Elf64_Sym *sym)
++{
++	return false;
++}
++#endif
++
++static struct mod_sec * find_mod_sec(struct module *mod, unsigned int infosec,
++		const Elf64_Rela *rela, Elf64_Sym *sym)
++{
++	struct mod_sec *sec = NULL;
++	bool fixed = module_is_fixed_section(mod, infosec);
++
++	if (is_rand_symbol(mod, sym)) {
++		sec = fixed ? &mod->arch.fixed_rand : &mod->arch.rand;
++	} else {
++		sec = fixed ? &mod->arch.fixed : &mod->arch.core;
++	}
++
++	return sec;
++}
++
+ static u64 module_emit_got_entry(struct module *mod, void *loc,
+-				 const Elf64_Rela *rela, Elf64_Sym *sym)
++		unsigned int infosec, const Elf64_Rela *rela, Elf64_Sym *sym)
+ {
+-	struct mod_got_sec *gotsec = &mod->arch.core;
++	struct mod_sec *gotsec = find_mod_sec(mod, infosec, rela, sym);
+ 	u64 *got = (u64 *)gotsec->got->sh_addr;
+ 	int i = gotsec->got_num_entries;
+ 	u64 ret;
+@@ -147,10 +531,11 @@
+ 	return a_val == b_val;
+ }
+ 
+-static void get_plt_entry(struct plt_entry *plt_entry, struct module *mod,
+-		void *loc, const Elf64_Rela *rela, Elf64_Sym *sym)
++static void get_plt_entry(struct plt_entry *plt_entry,
++		struct module *mod, void *loc, unsigned int infosec,
++		const Elf64_Rela *rela, Elf64_Sym *sym)
+ {
+-	u64 abs_val = module_emit_got_entry(mod, loc, rela, sym);
++	u64 abs_val = module_emit_got_entry(mod, loc, infosec, rela, sym);
+ 	u32 rel_val = abs_val - (u64)&plt_entry->rel_addr
+ 			- sizeof(plt_entry->rel_addr);
+ 
+@@ -159,13 +544,12 @@
+ }
+ 
+ static u64 module_emit_plt_entry(struct module *mod, void *loc,
+-				 const Elf64_Rela *rela, Elf64_Sym *sym)
++		unsigned int infosec, const Elf64_Rela *rela, Elf64_Sym *sym)
+ {
+-	struct mod_plt_sec *pltsec = &mod->arch.core_plt;
++	struct mod_sec *pltsec = find_mod_sec(mod, infosec, rela, sym);
+ 	int i = pltsec->plt_num_entries;
+ 	void *plt = (void *)pltsec->plt->sh_addr + (u64)i * module_plt_size;
+-
+-	get_plt_entry(plt, mod, loc, rela, sym);
++	get_plt_entry(plt, mod, loc, infosec, rela, sym);
+ 
+ 	/*
+ 	 * Check if the entry we just created is a duplicate. Given that the
+@@ -207,8 +591,20 @@
+ 	return num > 0 && cmp_rela(rela + num, rela + num - 1) == 0;
+ }
+ 
+-static void count_gots_plts(unsigned long *num_got, unsigned long *num_plt,
+-		Elf64_Sym *syms, Elf64_Rela *rela, int num)
++struct GOT_PLT_Count {
++	unsigned long got;
++	unsigned long got_rand;
++	unsigned long fixed_got;
++	unsigned long fixed_got_rand;
++	unsigned long plt;
++	unsigned long plt_rand;
++	unsigned long fixed_plt;
++	unsigned long fixed_plt_rand;
++};
++
++static void count_gots_plts(struct GOT_PLT_Count *counter,
++		Elf64_Sym *syms, Elf64_Rela *rela, int num,
++		bool fixed, struct module *mod)
+ {
+ 	Elf64_Sym *s;
+ 	int i;
+@@ -227,10 +623,32 @@
+ 			 */
+ 			if (!duplicate_rel(rela, i) &&
+ 			    !find_got_kernel_entry(s, rela + i)) {
+-				(*num_got)++;
++				if (is_rand_symbol(mod, s)) {
++					if (fixed)
++						counter->fixed_got_rand++;
++					else
++						counter->got_rand++;
++				} else {
++					if (fixed)
++						counter->fixed_got++;
++					else
++						counter->got++;
++				}
++
+ 				if (ELF64_R_TYPE(rela[i].r_info) ==
+-				    R_X86_64_PLT32 && !is_local_symbol(s))
+-					(*num_plt)++;
++				    R_X86_64_PLT32) {
++					if (is_rand_symbol(mod, s)) {
++						if (fixed)
++							counter->fixed_plt_rand++;
++						else
++							counter->plt_rand++;
++					} else {
++						if (fixed)
++							counter->fixed_plt++;
++						else
++							counter->plt++;
++					}
++				}
+ 			}
+ 			break;
+ 		}
+@@ -323,17 +741,21 @@
+ 
+ 	for (i = 0; i < ehdr->e_shnum; i++) {
+ 		Elf64_Rela *rels = (void *)ehdr + sechdrs[i].sh_offset;
++		bool isSecFixed;
+ 
+ 		if (sechdrs[i].sh_type != SHT_RELA)
+ 			continue;
+ 
++		isSecFixed = module_is_fixed_section(mod, sechdrs[i].sh_info);
++
+ 		for (j = 0; j < sechdrs[i].sh_size / sizeof(*rels); j++) {
+ 			Elf64_Rela *rel = &rels[j];
+ 			Elf64_Sym *sym = &syms[ELF64_R_SYM(rel->r_info)];
+ 			void *loc = (void *)sechdrs[sechdrs[i].sh_info].sh_addr
+ 					+ rel->r_offset;
++			bool isSymFixed = module_is_fixed_section(mod, sym->st_shndx);
+ 
+-			if (is_local_symbol(sym)) {
++			if (is_local_symbol(sym) && isSecFixed == isSymFixed) {
+ 				switch (ELF64_R_TYPE(rel->r_info)) {
+ 				case R_X86_64_GOTPCRELX:
+ 					if (do_relax_GOTPCRELX(rel, loc))
+@@ -343,6 +765,10 @@
+ 					if (do_relax_REX_GOTPCRELX(rel, loc))
+ 						BUG();
+ 					break;
++				case R_X86_64_PLT32:
++					rel->r_info &= ~ELF64_R_TYPE(~0LU);
++					rel->r_info |= R_X86_64_PC32;
++					break;
+ 				case R_X86_64_GOTPCREL:
+ 					/* cannot be relaxed, ignore it */
+ 					break;
+@@ -354,6 +780,22 @@
+ 	return 0;
+ }
+ 
++static void init_got_sec_hdr(struct elf64_shdr *got, Elf64_Xword size)
++{
++	got->sh_type = SHT_NOBITS;
++	got->sh_flags = SHF_ALLOC;
++	got->sh_addralign = L1_CACHE_BYTES;
++	got->sh_size = size;
++}
++
++static void init_plt_sec_hdr(struct elf64_shdr *plt, Elf64_Xword size)
++{
++	plt->sh_type = SHT_NOBITS;
++	plt->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
++	plt->sh_addralign = L1_CACHE_BYTES;
++	plt->sh_size = size;
++}
++
+ /*
+  * Generate GOT entries for GOTPCREL relocations that do not exists in the
+  * kernel GOT. Based on arm64 module-plts implementation.
+@@ -361,13 +803,17 @@
+ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
+ 			      char *secstrings, struct module *mod)
+ {
+-	unsigned long num_got = 0;
+-	unsigned long num_plt = 0;
++	struct GOT_PLT_Count counter;
+ 	Elf_Shdr *symtab = NULL;
+ 	Elf64_Sym *syms = NULL;
+ 	char *strings, *name;
+ 	int i, got_idx = -1;
+ 
++	/* Init all members to zero */
++	memset(&counter, 0, sizeof(counter));
++
++	// TODO: allow for randomizable after testing
++	//if (!is_randomizable_module(mod))
+ 	apply_relaxations(ehdr, sechdrs, mod);
+ 
+ 	/*
+@@ -378,22 +824,32 @@
+ 	for (i = 0; i < ehdr->e_shnum; i++) {
+ 		if (!strcmp(secstrings + sechdrs[i].sh_name, ".got")) {
+ 			got_idx = i;
++			mod->arch.core.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".got.rand")) {
++			mod->arch.rand.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.got")) {
++			mod->arch.fixed.got = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.got.rand")) {
++			mod->arch.fixed_rand.got = sechdrs + i;
+ 		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".plt")) {
+-			mod->arch.core_plt.plt = sechdrs + i;
++			mod->arch.core.plt = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".plt.rand")) {
++			mod->arch.rand.plt = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.plt")) {
++			mod->arch.fixed.plt = sechdrs + i;
++		} else if (!strcmp(secstrings + sechdrs[i].sh_name, ".fixed.plt.rand")) {
++			mod->arch.fixed_rand.plt = sechdrs + i;
+ 		} else if (sechdrs[i].sh_type == SHT_SYMTAB) {
+ 			symtab = sechdrs + i;
+ 			syms = (Elf64_Sym *)symtab->sh_addr;
+ 		}
+ 	}
+ 
+-	if (got_idx < 0) {
+-		pr_err("%s: module GOT section missing\n", mod->name);
++	if (!mod->arch.core.got || !mod->arch.rand.got || !mod->arch.fixed.got || !mod->arch.fixed_rand.got) {
++		pr_err("%s: module GOT section(s) missing\n", mod->name);
+ 		return -ENOEXEC;
+ 	}
+-
+-	mod->arch.core.got = sechdrs + got_idx;
+-
+-	if (!mod->arch.core_plt.plt) {
++	if (!mod->arch.core.plt || !mod->arch.rand.plt || !mod->arch.fixed.plt || !mod->arch.fixed_rand.plt) {
+ 		pr_err("%s: module PLT section missing\n", mod->name);
+ 		return -ENOEXEC;
+ 	}
+@@ -405,6 +861,7 @@
+ 	for (i = 0; i < ehdr->e_shnum; i++) {
+ 		Elf64_Rela *rels = (void *)ehdr + sechdrs[i].sh_offset;
+ 		int numrels = sechdrs[i].sh_size / sizeof(Elf64_Rela);
++		unsigned int infosec = sechdrs[i].sh_info;
+ 
+ 		if (sechdrs[i].sh_type != SHT_RELA)
+ 			continue;
+@@ -412,23 +869,58 @@
+ 		/* sort by type, symbol index and addend */
+ 		sort(rels, numrels, sizeof(Elf64_Rela), cmp_rela, NULL);
+ 
+-		count_gots_plts(&num_got, &num_plt, syms, rels, numrels);
++		count_gots_plts(&counter, syms, rels, numrels,
++				module_is_fixed_section(mod, infosec), mod);
++	}
++
++	if (is_randomizable_module(mod)){
++		printk("counter.got = %lu\n", counter.got);
++		printk("counter.fixed_got = %lu\n", counter.fixed_got);
++		printk("counter.got_rand = %lu\n", counter.got_rand);
++		printk("counter.fixed_got_rand = %lu\n", counter.fixed_got_rand);
++		printk("counter.plt = %lu\n", counter.plt);
++		printk("counter.plt_rand = %lu\n", counter.plt_rand);
++		printk("counter.fixed_plt = %lu\n", counter.fixed_plt);
++		printk("counter.fixed_plt_rand = %lu\n", counter.fixed_plt_rand);
+ 	}
+ 
+-	mod->arch.core.got->sh_type = SHT_NOBITS;
+-	mod->arch.core.got->sh_flags = SHF_ALLOC;
+-	mod->arch.core.got->sh_addralign = L1_CACHE_BYTES;
+-	mod->arch.core.got->sh_size = (num_got + 1) * sizeof(u64);
++	init_got_sec_hdr(mod->arch.core.got, (counter.got + 1) * sizeof(u64));
+ 	mod->arch.core.got_num_entries = 0;
+-	mod->arch.core.got_max_entries = num_got;
++	mod->arch.core.got_max_entries = counter.got;
++
++	init_got_sec_hdr(mod->arch.rand.got, (counter.got_rand + 1) * sizeof(u64));
++	mod->arch.rand.got_num_entries = 0;
++	mod->arch.rand.got_max_entries = counter.got_rand;
++
++	init_got_sec_hdr(mod->arch.fixed.got, (counter.fixed_got + 1) * sizeof(u64));
++	mod->arch.fixed.got_num_entries = 0;
++	mod->arch.fixed.got_max_entries = counter.fixed_got;
++
++	init_got_sec_hdr(mod->arch.fixed_rand.got, (counter.fixed_got_rand + 1) * sizeof(u64));
++	mod->arch.fixed_rand.got_num_entries = 0;
++	mod->arch.fixed_rand.got_max_entries = counter.fixed_got_rand;
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++	mod->arch.rand.got->sh_size = PAGE_ALIGN(mod->arch.rand.got->sh_size);
++	mod->arch.fixed_rand.got->sh_size = PAGE_ALIGN(mod->arch.fixed_rand.got->sh_size);
++#endif
+ 
+ 	module_plt_size = ALIGN(__THUNK_FOR_PLT_SIZE, PLT_ENTRY_ALIGNMENT);
+-	mod->arch.core_plt.plt->sh_type = SHT_NOBITS;
+-	mod->arch.core_plt.plt->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
+-	mod->arch.core_plt.plt->sh_addralign = L1_CACHE_BYTES;
+-	mod->arch.core_plt.plt->sh_size = (num_plt + 1) * module_plt_size;
+-	mod->arch.core_plt.plt_num_entries = 0;
+-	mod->arch.core_plt.plt_max_entries = num_plt;
++	init_plt_sec_hdr(mod->arch.core.plt, (counter.plt + 1) * module_plt_size);
++	mod->arch.core.plt_num_entries = 0;
++	mod->arch.core.plt_max_entries = counter.plt;
++
++	init_plt_sec_hdr(mod->arch.rand.plt, (counter.plt_rand + 1) * module_plt_size);
++	mod->arch.rand.plt_num_entries = 0;
++	mod->arch.rand.plt_max_entries = counter.plt_rand;
++
++	init_plt_sec_hdr(mod->arch.fixed.plt, (counter.fixed_plt + 1) * module_plt_size);
++	mod->arch.fixed.plt_num_entries = 0;
++	mod->arch.fixed.plt_max_entries = counter.fixed_plt;
++
++	init_plt_sec_hdr(mod->arch.fixed_rand.plt, (counter.fixed_plt_rand + 1) * module_plt_size);
++	mod->arch.fixed_rand.plt_num_entries = 0;
++	mod->arch.fixed_rand.plt_max_entries = counter.fixed_plt_rand;
+ 
+ 	strings = (void *) ehdr + sechdrs[symtab->sh_link].sh_offset;
+ 	for (i = 0; i < symtab->sh_size/sizeof(Elf_Sym); i++) {
+@@ -531,14 +1023,26 @@
+ 		   const char *strtab,
+ 		   unsigned int symindex,
+ 		   unsigned int relsec,
+-		   struct module *me)
++		   struct module *me){
++	return apply_relocate_add__(sechdrs, strtab, symindex, relsec, me, true);
++}
++
++static int apply_relocate_add__(Elf64_Shdr *sechdrs,
++		   const char *strtab,
++		   unsigned int symindex,
++		   unsigned int relsec,
++		   struct module *me,
++		   bool check)
+ {
+ 	unsigned int i;
+ 	Elf64_Rela *rel = (void *)sechdrs[relsec].sh_addr;
++	unsigned int infosec = sechdrs[relsec].sh_info;
+ 	Elf64_Sym *sym;
+ 	void *loc;
+ 	u64 val;
+ 
++	check = 0;
++
+ 	DEBUGP("Applying relocate section %u to %u\n",
+ 	       relsec, sechdrs[relsec].sh_info);
+ 	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+@@ -552,7 +1056,8 @@
+ 			+ ELF64_R_SYM(rel[i].r_info);
+ 
+ #ifdef CONFIG_X86_PIC
+-		BUG_ON(check_relocation_pic_safe(&rel[i], sym, strtab, me));
++		if (check)
++			BUG_ON(check_relocation_pic_safe(&rel[i], sym, strtab, me));
+ #endif
+ 
+ 		DEBUGP("type %d st_value %Lx r_addend %Lx loc %Lx\n",
+@@ -564,39 +1069,43 @@
+ 		switch (ELF64_R_TYPE(rel[i].r_info)) {
+ 		case R_X86_64_NONE:
+ 			break;
++		case R_X86_64_GOTOFF64:
++			val -= me->arch.core.got->sh_addr;
++			/* fallthrough */
+ 		case R_X86_64_64:
+-			if (*(u64 *)loc != 0)
++			if (check && *(u64 *)loc != 0)
+ 				goto invalid_relocation;
+ 			*(u64 *)loc = val;
+ 			break;
+ 		case R_X86_64_32:
+-			if (*(u32 *)loc != 0)
++			if (check && *(u32 *)loc != 0)
+ 				goto invalid_relocation;
+ 			*(u32 *)loc = val;
+ 			if (val != *(u32 *)loc)
+ 				goto overflow;
+ 			break;
+ 		case R_X86_64_32S:
+-			if (*(s32 *)loc != 0)
++			if (check && *(s32 *)loc != 0)
+ 				goto invalid_relocation;
+ 			*(s32 *)loc = val;
+ 			if ((s64)val != *(s32 *)loc)
+ 				goto overflow;
+ 			break;
+ 		case R_X86_64_PLT32:
+-			if (!is_local_symbol(sym))
+-				val = module_emit_plt_entry(me, loc, rel + i,
+-					sym) + rel[i].r_addend;
++			val = module_emit_plt_entry(me, loc, infosec, rel + i,
++			    sym) + rel[i].r_addend;
+ 			goto pc32_reloc;
+ 		case R_X86_64_REX_GOTPCRELX:
+ 		case R_X86_64_GOTPCRELX:
+ 		case R_X86_64_GOTPCREL:
+-			val = module_emit_got_entry(me, loc, rel + i, sym)
+-				+ rel[i].r_addend;
++			val = module_emit_got_entry(me, loc, infosec, rel + i,
++			    sym) + rel[i].r_addend;
+ 			/* fallthrough */
++		case R_X86_64_GOTPC32:
++			/* symbol = _GLOBAL_OFFSET_TABLE_ */
+ 		case R_X86_64_PC32:
+ pc32_reloc:
+-			if (*(u32 *)loc != 0)
++			if (check && *(u32 *)loc != 0)
+ 				goto invalid_relocation;
+ 			val -= (u64)loc;
+ 			*(u32 *)loc = val;
+@@ -606,7 +1115,7 @@
+ 				goto overflow;
+ 			break;
+ 		case R_X86_64_PC64:
+-			if (*(u64 *)loc != 0)
++			if (check && *(u64 *)loc != 0)
+ 				goto invalid_relocation;
+ 			val -= (u64)loc;
+ 			*(u64 *)loc = val;
+diff -urN linux-5.0.2/arch/x86/kernel/module.lds linux-5.0.2-kaslr/arch/x86/kernel/module.lds
+--- linux-5.0.2/arch/x86/kernel/module.lds	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/kernel/module.lds	2019-10-26 00:47:44.588838270 -0400
+@@ -1,4 +1,12 @@
+ SECTIONS {
+-	.got (NOLOAD) : { BYTE(0) }
+-	.plt (NOLOAD) : { BYTE(0) }
++	/* Movable section */
++	.got (NOLOAD) : { BYTE(0) } /* Non-randomizable GOT */
++	.got.rand (NOLOAD) : { BYTE(0) } /* Randomizable GOT */
++	.plt (NOLOAD) : { BYTE(0) } /* Non-randomizable PLT */
++	.plt.rand (NOLOAD) : { BYTE(0) } /* Randomizable PLT */
++	/* Immovable (fixed) section */
++	.fixed.got (NOLOAD) : { BYTE(0) } /* Non-randomizable GOT */
++	.fixed.got.rand (NOLOAD) : { BYTE(0) } /* Randomizable GOT */
++	.fixed.plt (NOLOAD) : { BYTE(0) } /* Non-randomizable PLT */
++	.fixed.plt.rand (NOLOAD) : { BYTE(0) } /* Randomizable PLT */
+ }
+diff -urN linux-5.0.2/arch/x86/kernel/module_stack.c linux-5.0.2-kaslr/arch/x86/kernel/module_stack.c
+--- linux-5.0.2/arch/x86/kernel/module_stack.c	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/arch/x86/kernel/module_stack.c	2019-10-26 00:46:58.580840157 -0400
+@@ -0,0 +1,257 @@
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++
++#include <linux/moduleloader.h>
++#include <linux/vmalloc.h>
++#include <linux/slab.h>
++#include <linux/string.h>
++#include <linux/kernel.h>
++#include <linux/kasan.h>
++#include <linux/bug.h>
++#include <linux/mm.h>
++#include <linux/gfp.h>
++#include <linux/random.h>
++
++#include "../../../kernel/smr/lfsmr.h"
++
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++#define MODULE_STACK_SIZE	(THREAD_SIZE)
++#define NUM_STACKS_PER_CPU	5
++
++struct stack_node {
++	struct stack_node *next;
++	u64 ver;
++	u8 _stack[MODULE_STACK_SIZE - 8]; /* -8 is for stack alignment */
++	u64 stack[0];
++} __packed;
++
++struct stack_head {
++	struct stack_node *head;
++	union {
++		struct {
++			u64 size:8;
++			u64 ver:8;
++			u64 aba:48;
++		};
++		u64 stamp;
++	};
++} __aligned(16);
++
++static DEFINE_PER_CPU(struct stack_head, module_cpu_stack);
++static DEFINE_PER_CPU(struct stack_head, module_stack_trash);
++
++static struct stack_head __my_load(struct stack_head *head_ptr, memory_order order)
++{
++	lfatomic_big_t temp = __lfaba_load((_Atomic(lfatomic_big_t) *)head_ptr, order);
++
++	return *((struct stack_head *)&temp);
++}
++
++static bool __my_cmpxchg(struct stack_head *obj, struct stack_head *expected, struct stack_head desired, memory_order succ, memory_order fail)
++{
++	_Atomic(lfatomic_big_t) *_obj = (_Atomic(lfatomic_big_t) *) obj;
++	lfatomic_big_t *_expected = (lfatomic_big_t *) expected;
++	lfatomic_big_t _desired = *((lfatomic_big_t *)&desired);
++
++	return __lfaba_cmpxchg_weak(_obj, _expected, _desired, succ, fail);
++}
++
++
++static int module_push_stack(struct stack_node *node, struct stack_head *head_ptr, bool verify_ver)
++{
++	struct stack_head new_head, head = __my_load(head_ptr, memory_order_acquire);
++
++	do {
++		if(verify_ver && node->ver != head.ver)
++			return -1;
++
++		node->next = head.head;
++		new_head = (struct stack_head) {
++				.head = node,
++				.aba = head.aba + 1,
++				.size = head.size + 1,
++				.ver = head.ver,
++			};
++	} while (!__my_cmpxchg(head_ptr, &head, new_head, memory_order_acq_rel, memory_order_acquire));
++
++	return 0;
++}
++
++static struct stack_node * module_pop_stack(struct stack_head *head_ptr)
++{
++	struct stack_node *node;
++	struct stack_head new_head, head = __my_load(head_ptr, memory_order_acquire);
++
++	do {
++		node = head.head;
++		if(node == NULL) return NULL;
++		node->ver = head.ver;
++		new_head = (struct stack_head) {
++				.head = node->next,
++				.aba = head.aba + 1,
++				.size = head.size - 1,
++				.ver = head.ver,
++			};
++	} while (!__my_cmpxchg(head_ptr, &head, new_head, memory_order_acq_rel, memory_order_acquire));
++
++	return node;
++}
++
++static void module_push_stack_this_cpu(struct stack_node *node)
++{
++	struct stack_head *head_ptr = this_cpu_ptr(&module_cpu_stack);
++	if (module_push_stack(node, head_ptr, true)) {
++		module_push_stack(node, this_cpu_ptr(&module_stack_trash), false);
++		// printk("Stack Trashed\n");
++	}
++}
++
++static struct stack_node * module_pop_stack_this_cpu(void)
++{
++	struct stack_head *head_ptr = this_cpu_ptr(&module_cpu_stack);
++	return module_pop_stack(head_ptr);
++}
++
++
++static struct stack_node * module_alloc_stack_node(void)
++{
++	struct stack_node *node = kmalloc(sizeof(*node), GFP_ATOMIC);
++	u64 stack_addr = (u64)node->stack;
++
++	if(node == NULL) {
++		pr_err("Out of memory\n");
++		BUG();
++	}else if(stack_addr+8 != ALIGN(stack_addr, 16)) {
++		printp(stack_addr);
++		pr_err("Stack not alligned properly\n");
++	}
++
++	profile_rand.count_stack_alloc++;
++
++	return node;
++}
++
++static void module_free_stack_node(struct stack_node *node)
++{
++	// printk("Stack Freed\n");
++	kfree(node);
++	profile_rand.count_stack_free++;
++}
++
++static void populate_stacks(struct stack_head *head_ptr)
++{
++	int i;
++	struct stack_node *node;
++
++	for(i=0; i<NUM_STACKS_PER_CPU; i++) {
++		node = module_alloc_stack_node();
++		module_push_stack(node, head_ptr, false);
++	}
++}
++
++void module_stack_empty_trash(void)
++{
++	int cpu;
++	struct stack_head *head_ptr;
++	struct stack_node *node;
++
++	for_each_possible_cpu(cpu) {
++		head_ptr = per_cpu_ptr(&module_stack_trash, cpu);
++	
++		do {
++			node = module_pop_stack(head_ptr);
++			if(node) {
++				module_free_stack_node(node);
++			}
++		} while(node);
++	}
++}
++EXPORT_SYMBOL_GPL(module_stack_empty_trash);
++
++void module_init_stacks(void)
++{
++	module_rerandomize_stack();
++}
++
++void module_rerandomize_stack(void)
++{
++	int cpu;
++	struct stack_head head, new_head;
++	struct stack_head *head_ptr;
++	struct stack_node *node;
++
++	for_each_possible_cpu(cpu) {
++		new_head = (struct stack_head) {
++				.head = NULL,
++				.stamp = 0,
++		};
++		populate_stacks(&new_head);
++		head_ptr = per_cpu_ptr(&module_cpu_stack, cpu);
++		head = __my_load(head_ptr, memory_order_acquire);
++
++		do {
++			new_head.aba = head.aba + 1;
++			new_head.ver = head.ver + 1;
++		} while (!__my_cmpxchg(head_ptr, &head, new_head, memory_order_acq_rel, memory_order_acquire));
++
++		/* Empty old stacks into trash */
++		do {
++			node = module_pop_stack(&head);
++			if(node) {
++				module_push_stack(node, per_cpu_ptr(&module_stack_trash, cpu), false);
++			}
++		} while(node);
++	}
++}
++EXPORT_SYMBOL_GPL(module_rerandomize_stack);
++
++/*
++// Helper functions for debugging
++static void* getsp(void)
++{
++    void *sp;
++    asm( "mov %%rsp, %0" : "=rm" ( sp ));
++    return sp;
++}
++
++void __attribute__((naked)) fuck_with_registers(void){
++    asm ("mov $0xDEADBAADDEADBAAD, %rax");
++    asm ("mov $0xDEADBAADDEADBAAD, %rdi");
++    asm ("mov $0xDEADBAADDEADBAAD, %rsi");
++    asm ("mov $0xDEADBAADDEADBAAD, %rdx");
++    asm ("mov $0xDEADBAADDEADBAAD, %rcx");
++    asm ("mov $0xDEADBAADDEADBAAD, %r8");
++    asm ("mov $0xDEADBAADDEADBAAD, %r9");
++    asm ("mov $0xDEADBAADDEADBAAD, %r10");
++    asm ("mov $0xDEADBAADDEADBAAD, %r11");
++    asm ("ret");
++}
++*/
++
++void module_offer_stack(void *stack)
++{
++	struct stack_node *node = container_of(stack, struct stack_node, stack);
++
++	module_push_stack_this_cpu(node);
++}
++EXPORT_SYMBOL_GPL(module_offer_stack);
++
++void *module_get_stack(void)
++{
++	struct stack_node *node;
++
++	node = module_pop_stack_this_cpu();
++
++	if(node == NULL) {
++		/* Just a warning. May cause performance penalty
++		if stack is allocated in wrappers too frequently */
++		pr_err_once("Dynamic Stack Allocation Warning!!!\n");
++		node = module_alloc_stack_node();
++	}
++
++	return node->stack;
++}
++EXPORT_SYMBOL_GPL(module_get_stack);
++#endif
++#endif
+diff -urN linux-5.0.2/arch/x86/Makefile linux-5.0.2-kaslr/arch/x86/Makefile
+--- linux-5.0.2/arch/x86/Makefile	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/Makefile	2019-10-26 00:46:58.580840157 -0400
+@@ -133,7 +133,8 @@
+         KBUILD_CFLAGS += -mno-red-zone
+ 
+ ifdef CONFIG_X86_PIC
+-        KBUILD_CFLAGS_MODULE += -fPIC -mcmodel=small -fno-stack-protector -fvisibility=hidden
++        KBUILD_CFLAGS_MODULE += -fPIC -mcmodel=small -fno-stack-protector
++        # -fvisibility=hidden
+   ifdef CONFIG_RETPOLINE
+         MOD_EXTRA_LINK += $(srctree)/arch/$(SRCARCH)/module-lib/retpoline.o
+   else
+diff -urN linux-5.0.2/arch/x86/module-lib/retpoline.S linux-5.0.2-kaslr/arch/x86/module-lib/retpoline.S
+--- linux-5.0.2/arch/x86/module-lib/retpoline.S	2019-10-26 00:46:25.852841499 -0400
++++ linux-5.0.2-kaslr/arch/x86/module-lib/retpoline.S	2019-10-26 00:46:58.580840157 -0400
+@@ -45,3 +45,12 @@
+ GENERATE_THUNK(r15)
+ #endif
+ 
++.section .fixed.text, "ax"
++ENTRY(__FIXED_JMP_RETPOLINE)
++	JMP_NOSPEC %rax
++ENDPROC(__FIXED_JMP_RETPOLINE)
++
++.section .fixed.text, "ax"
++ENTRY(__FIXED_CALL_RETPOLINE)
++	CALL_NOSPEC %rax
++ENDPROC(__FIXED_CALL_RETPOLINE)
+diff -urN linux-5.0.2/arch/x86/tools/relocs.h linux-5.0.2-kaslr/arch/x86/tools/relocs.h
+--- linux-5.0.2/arch/x86/tools/relocs.h	2019-10-26 00:46:22.384841641 -0400
++++ linux-5.0.2-kaslr/arch/x86/tools/relocs.h	2019-10-26 00:46:58.580840157 -0400
+@@ -17,6 +17,14 @@
+ #include <regex.h>
+ #include <tools/le_byteshift.h>
+ 
++#ifndef R_X86_64_REX_GOTPCRELX
++	#define R_X86_64_REX_GOTPCRELX	42
++#endif
++
++#ifndef R_X86_64_GOTPCRELX
++	#define R_X86_64_GOTPCRELX	41
++#endif
++
+ void die(char *fmt, ...) __attribute__((noreturn));
+ 
+ #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+diff -urN linux-5.0.2/include/linux/module.h linux-5.0.2-kaslr/include/linux/module.h
+--- linux-5.0.2/include/linux/module.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/include/linux/module.h	2019-10-26 00:46:58.580840157 -0400
+@@ -74,6 +74,9 @@
+ /* These are either module local, or the kernel's dummy ones. */
+ extern int init_module(void);
+ extern void cleanup_module(void);
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++extern void randomize_module(unsigned long);
++#endif
+ 
+ #ifndef MODULE
+ /**
+@@ -137,6 +140,14 @@
+ 	{ return exitfn; }					\
+ 	void cleanup_module(void) __copy(exitfn) __attribute__((alias(#exitfn)));
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++typedef void (*randomizecall_t)(unsigned long);
++#define module_randomize(randomizefn)					\
++	static inline randomizecall_t __maybe_unused __randomizetest(void)		\
++	{ return randomizefn; }					\
++	void randomize_module(unsigned long) __attribute__((alias(#randomizefn)));
++#endif
++
+ #endif
+ 
+ /* This means "can be init if no module support, otherwise module load
+@@ -317,7 +328,7 @@
+ 	char *strtab;
+ };
+ 
+-#ifdef CONFIG_LIVEPATCH
++#if defined(CONFIG_LIVEPATCH) || defined(CONFIG_X86_MODULE_RERANDOMIZE)
+ struct klp_modinfo {
+ 	Elf_Ehdr hdr;
+ 	Elf_Shdr *sechdrs;
+@@ -393,6 +404,7 @@
+ 	/* Core layout: rbtree is accessed frequently, so keep together. */
+ 	struct module_layout core_layout __module_layout_align;
+ 	struct module_layout init_layout;
++	struct module_layout fixed_layout;
+ 
+ 	/* Arch-specific module values */
+ 	struct mod_arch_specific arch;
+@@ -455,7 +467,7 @@
+ 	unsigned long *ftrace_callsites;
+ #endif
+ 
+-#ifdef CONFIG_LIVEPATCH
++#if defined(CONFIG_LIVEPATCH) || defined(CONFIG_X86_MODULE_RERANDOMIZE)
+ 	bool klp; /* Is this a livepatch module? */
+ 	bool klp_alive;
+ 
+@@ -463,6 +475,11 @@
+ 	struct klp_modinfo *klp_info;
+ #endif
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++	bool randomizable;
++	void (*rerandomize)(unsigned long);
++#endif
++
+ #ifdef CONFIG_MODULE_UNLOAD
+ 	/* What modules depend on me? */
+ 	struct list_head source_list;
+@@ -659,6 +676,19 @@
+ }
+ #endif /* CONFIG_LIVEPATCH */
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++void update_module_ref(struct module *mod, unsigned long delta);
++static inline bool is_randomizable_module(struct module *mod)
++{
++	return mod->randomizable;
++}
++#else /* !CONFIG_X86_MODULE_RERANDOMIZE */
++static inline bool is_randomizable_module(struct module *mod)
++{
++	return false;
++}
++#endif /* CONFIG_X86_MODULE_RERANDOMIZE */
++
+ bool is_module_sig_enforced(void);
+ 
+ #else /* !CONFIG_MODULES... */
+@@ -806,11 +836,15 @@
+ extern void set_all_modules_text_ro(void);
+ extern void module_enable_ro(const struct module *mod, bool after_init);
+ extern void module_disable_ro(const struct module *mod);
++extern void module_enable_nx(const struct module *mod);
++extern void module_disable_nx(const struct module *mod);
+ #else
+ static inline void set_all_modules_text_rw(void) { }
+ static inline void set_all_modules_text_ro(void) { }
+ static inline void module_enable_ro(const struct module *mod, bool after_init) { }
+ static inline void module_disable_ro(const struct module *mod) { }
++void module_enable_nx(const struct module *mod) { }
++void module_disable_nx(const struct module *mod) { }
+ #endif
+ 
+ #ifdef CONFIG_GENERIC_BUG
+diff -urN linux-5.0.2/include/linux/moduleloader.h linux-5.0.2-kaslr/include/linux/moduleloader.h
+--- linux-5.0.2/include/linux/moduleloader.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/include/linux/moduleloader.h	2019-10-26 00:46:58.580840157 -0400
+@@ -19,6 +19,10 @@
+ 			      char *secstrings,
+ 			      struct module *mod);
+ 
++int module_arch_preinit(struct module *mod);
++bool module_is_fixed_section(struct module *mod, unsigned int shnum);
++bool module_is_fixed_section_name(const char *sname);
++
+ /* Additional bytes needed by arch in front of individual sections */
+ unsigned int arch_mod_section_prepend(struct module *mod, unsigned int section);
+ 
+diff -urN linux-5.0.2/include/linux/vmalloc.h linux-5.0.2-kaslr/include/linux/vmalloc.h
+--- linux-5.0.2/include/linux/vmalloc.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/include/linux/vmalloc.h	2019-10-26 00:46:58.580840157 -0400
+@@ -206,4 +206,12 @@
+ int register_vmap_purge_notifier(struct notifier_block *nb);
+ int unregister_vmap_purge_notifier(struct notifier_block *nb);
+ 
++void *remap_module(unsigned long addr, unsigned long size,
++		unsigned long new_phy_addr, unsigned long new_phy_size,
++		unsigned long align, unsigned long start, unsigned long end,
++		gfp_t gfp_mask, pgprot_t prot, unsigned long vm_flags,
++		int node, const void *caller);
++
++void unmap_module(const void *addr, const void *, unsigned long);
++
+ #endif /* _LINUX_VMALLOC_H */
+diff -urN linux-5.0.2/include/smr/smr.h linux-5.0.2-kaslr/include/smr/smr.h
+--- linux-5.0.2/include/smr/smr.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/include/smr/smr.h	2019-10-26 00:46:58.580840157 -0400
+@@ -0,0 +1,18 @@
++#pragma once
++
++#define SMR_ORDER	6U /* 64 CPUs */
++#define SMR_NUM		(1U << SMR_ORDER)
++
++typedef struct _smr_header {
++	void *reserved[SMR_NUM+1];
++} smr_header;
++
++typedef struct _smr_handle {
++	unsigned long handle;
++	unsigned long vector;
++} smr_handle;
++
++void smr_init(void);
++smr_handle smr_enter(void);
++void smr_leave(smr_handle);
++int smr_retire(struct module *mod, void *address);
+diff -urN linux-5.0.2/init/main.c linux-5.0.2-kaslr/init/main.c
+--- linux-5.0.2/init/main.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/init/main.c	2019-10-26 00:46:58.580840157 -0400
+@@ -92,6 +92,7 @@
+ #include <linux/rodata_test.h>
+ #include <linux/jump_label.h>
+ #include <linux/mem_encrypt.h>
++#include <smr/smr.h>
+ 
+ #include <asm/io.h>
+ #include <asm/bugs.h>
+@@ -735,6 +736,14 @@
+ 	arch_post_acpi_subsys_init();
+ 	sfi_init_late();
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++	smr_init();
++#endif
++
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++	module_init_stacks();
++#endif
++
+ 	/* Do the rest non-__init'ed, we're now alive */
+ 	arch_call_rest_init();
+ }
+diff -urN linux-5.0.2/kernel/Makefile linux-5.0.2-kaslr/kernel/Makefile
+--- linux-5.0.2/kernel/Makefile	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/kernel/Makefile	2019-10-26 00:46:58.580840157 -0400
+@@ -12,6 +12,8 @@
+ 	    notifier.o ksysfs.o cred.o reboot.o \
+ 	    async.o range.o smpboot.o ucount.o
+ 
++obj-$(CONFIG_X86_MODULE_RERANDOMIZE) += smr.o
++obj-$(CONFIG_X86_MODULE_RERANDOMIZER) += randmod.o
+ obj-$(CONFIG_MODULES) += kmod.o
+ obj-$(CONFIG_MULTIUSER) += groups.o
+ 
+diff -urN linux-5.0.2/kernel/module.c linux-5.0.2-kaslr/kernel/module.c
+--- linux-5.0.2/kernel/module.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/kernel/module.c	2019-10-26 00:46:58.584840157 -0400
+@@ -79,14 +79,15 @@
+  * to ensure complete separation of code and data, but
+  * only when CONFIG_STRICT_MODULE_RWX=y
+  */
+-#ifdef CONFIG_STRICT_MODULE_RWX
++#if defined(CONFIG_STRICT_MODULE_RWX) || defined(CONFIG_X86_MODULE_RERANDOMIZE)
+ # define debug_align(X) ALIGN(X, PAGE_SIZE)
+ #else
+ # define debug_align(X) (X)
+ #endif
+ 
+ /* If this is set, the section belongs in the init part of the module */
+-#define INIT_OFFSET_MASK (1UL << (BITS_PER_LONG-1))
++#define INIT_OFFSET_MASK  (1UL << (BITS_PER_LONG-1))
++#define FIXED_OFFSET_MASK (1UL << (BITS_PER_LONG-2))
+ 
+ /*
+  * Mutex protects:
+@@ -1226,6 +1227,17 @@
+ static struct module_attribute modinfo_coresize =
+ 	__ATTR(coresize, 0444, show_coresize, NULL);
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++static ssize_t show_fixedsize(struct module_attribute *mattr,
++			     struct module_kobject *mk, char *buffer)
++{
++	return sprintf(buffer, "%u\n", mk->mod->fixed_layout.size);
++}
++
++static struct module_attribute modinfo_fixedsize =
++	__ATTR(fixedsize, 0444, show_fixedsize, NULL);
++#endif
++
+ static ssize_t show_initsize(struct module_attribute *mattr,
+ 			     struct module_kobject *mk, char *buffer)
+ {
+@@ -1255,6 +1267,9 @@
+ 	&modinfo_initstate,
+ 	&modinfo_coresize,
+ 	&modinfo_initsize,
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++	&modinfo_fixedsize,
++#endif
+ 	&modinfo_taint,
+ #ifdef CONFIG_MODULE_UNLOAD
+ 	&modinfo_refcnt,
+@@ -1942,6 +1957,10 @@
+ 	frob_ro_after_init(&mod->core_layout, set_memory_rw);
+ 	frob_text(&mod->init_layout, set_memory_rw);
+ 	frob_rodata(&mod->init_layout, set_memory_rw);
++
++	frob_text(&mod->fixed_layout, set_memory_rw);
++	frob_rodata(&mod->fixed_layout, set_memory_rw);
++	frob_ro_after_init(&mod->fixed_layout, set_memory_rw);
+ }
+ 
+ void module_enable_ro(const struct module *mod, bool after_init)
+@@ -1954,26 +1973,39 @@
+ 	frob_text(&mod->init_layout, set_memory_ro);
+ 	frob_rodata(&mod->init_layout, set_memory_ro);
+ 
+-	if (after_init)
++	frob_text(&mod->fixed_layout, set_memory_ro);
++	frob_rodata(&mod->fixed_layout, set_memory_ro);
++
++	if (after_init) {
+ 		frob_ro_after_init(&mod->core_layout, set_memory_ro);
++		frob_ro_after_init(&mod->fixed_layout, set_memory_ro);
++	}
+ }
+ 
+-static void module_enable_nx(const struct module *mod)
++void module_enable_nx(const struct module *mod)
+ {
+ 	frob_rodata(&mod->core_layout, set_memory_nx);
+ 	frob_ro_after_init(&mod->core_layout, set_memory_nx);
+ 	frob_writable_data(&mod->core_layout, set_memory_nx);
+ 	frob_rodata(&mod->init_layout, set_memory_nx);
+ 	frob_writable_data(&mod->init_layout, set_memory_nx);
++
++	frob_rodata(&mod->fixed_layout, set_memory_nx);
++	frob_ro_after_init(&mod->fixed_layout, set_memory_nx);
++	frob_writable_data(&mod->fixed_layout, set_memory_nx);
+ }
+ 
+-static void module_disable_nx(const struct module *mod)
++void module_disable_nx(const struct module *mod)
+ {
+ 	frob_rodata(&mod->core_layout, set_memory_x);
+ 	frob_ro_after_init(&mod->core_layout, set_memory_x);
+ 	frob_writable_data(&mod->core_layout, set_memory_x);
+ 	frob_rodata(&mod->init_layout, set_memory_x);
+ 	frob_writable_data(&mod->init_layout, set_memory_x);
++
++	frob_rodata(&mod->fixed_layout, set_memory_x);
++	frob_ro_after_init(&mod->fixed_layout, set_memory_x);
++	frob_writable_data(&mod->fixed_layout, set_memory_x);
+ }
+ 
+ /* Iterate through all modules and set each module's text as RW */
+@@ -1991,6 +2023,7 @@
+ 
+ 		frob_text(&mod->core_layout, set_memory_rw);
+ 		frob_text(&mod->init_layout, set_memory_rw);
++		frob_text(&mod->fixed_layout, set_memory_rw);
+ 	}
+ 	mutex_unlock(&module_mutex);
+ }
+@@ -2016,6 +2049,7 @@
+ 
+ 		frob_text(&mod->core_layout, set_memory_ro);
+ 		frob_text(&mod->init_layout, set_memory_ro);
++		frob_text(&mod->fixed_layout, set_memory_ro);
+ 	}
+ 	mutex_unlock(&module_mutex);
+ }
+@@ -2034,11 +2068,9 @@
+ 
+ #else
+ static void disable_ro_nx(const struct module_layout *layout) { }
+-static void module_enable_nx(const struct module *mod) { }
+-static void module_disable_nx(const struct module *mod) { }
+ #endif
+ 
+-#ifdef CONFIG_LIVEPATCH
++#if defined(CONFIG_LIVEPATCH) || defined(CONFIG_X86_MODULE_RERANDOMIZE)
+ /*
+  * Persist Elf information about a module. Copy the Elf header,
+  * section header table, section string table, and symtab section
+@@ -2049,10 +2081,13 @@
+ 	unsigned int size, symndx;
+ 	int ret;
+ 
+-	size = sizeof(*mod->klp_info);
+-	mod->klp_info = kmalloc(size, GFP_KERNEL);
+-	if (mod->klp_info == NULL)
+-		return -ENOMEM;
++	if (is_randomizable_module(mod)) {
++		/* klp_info is already allocated */
++		size = sizeof(*mod->klp_info);
++		mod->klp_info = kmalloc(size, GFP_KERNEL);
++		if (mod->klp_info == NULL)
++			return -ENOMEM;
++	}
+ 
+ 	/* Elf header */
+ 	size = sizeof(mod->klp_info->hdr);
+@@ -2093,6 +2128,7 @@
+ 	kfree(mod->klp_info->sechdrs);
+ free_info:
+ 	kfree(mod->klp_info);
++	mod->klp_info = NULL;
+ 	return ret;
+ }
+ 
+@@ -2126,6 +2162,19 @@
+ {
+ }
+ 
++
++/* Free core and fixed part of the module */
++static void module_memfree_non_init(struct module *mod)
++{
++	/* struct module could either be in fixed or core.
++	 * mod struct can not be accessed after free. */
++	void *core_base = mod->core_layout.base;
++	void *fixed_base = mod->fixed_layout.base;
++
++	module_memfree(core_base);
++	module_memfree(fixed_base);
++}
++
+ /* Free a module, remove from lists, etc. */
+ static void free_module(struct module *mod)
+ {
+@@ -2151,7 +2200,7 @@
+ 	/* Free any allocated parameters. */
+ 	destroy_params(mod->kp, mod->num_kp);
+ 
+-	if (is_livepatch_module(mod))
++	if (is_livepatch_module(mod) || is_randomizable_module(mod))
+ 		free_module_elf(mod);
+ 
+ 	/* Now we can delete it from the lists */
+@@ -2177,7 +2226,8 @@
+ 
+ 	/* Finally, free the core (containing the module structure) */
+ 	disable_ro_nx(&mod->core_layout);
+-	module_memfree(mod->core_layout.base);
++	disable_ro_nx(&mod->fixed_layout);
++	module_memfree_non_init(mod);
+ }
+ 
+ void *__symbol_get(const char *symbol)
+@@ -2373,42 +2423,51 @@
+ 	};
+ 	unsigned int m, i;
+ 
+-	for (i = 0; i < info->hdr->e_shnum; i++)
++	for (i = 0; i < info->hdr->e_shnum; i++) {
+ 		info->sechdrs[i].sh_entsize = ~0UL;
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++		if (is_randomizable_module(mod) &&
++				info->sechdrs[i].sh_type == SHT_RELA) {
++			info->sechdrs[i].sh_flags |= SHF_ALLOC;
++		}
++#endif
++	}
+ 
+-	pr_debug("Core section allocation order:\n");
++if(is_randomizable_module(mod)) {
++	/* Fixed sections allocation */
++	pr_debug("Fixed section allocation order:\n");
+ 	for (m = 0; m < ARRAY_SIZE(masks); ++m) {
+-		for (i = 0; i < info->hdr->e_shnum; ++i) {
++		for (i = 0; i < info->hdr->e_shnum; ++i){
+ 			Elf_Shdr *s = &info->sechdrs[i];
+ 			const char *sname = info->secstrings + s->sh_name;
+-
+-			if ((s->sh_flags & masks[m][0]) != masks[m][0]
++			if((s->sh_flags & masks[m][0]) != masks[m][0]
+ 			    || (s->sh_flags & masks[m][1])
+ 			    || s->sh_entsize != ~0UL
+-			    || strstarts(sname, ".init"))
++			    || !module_is_fixed_section_name(sname))
+ 				continue;
+-			s->sh_entsize = get_offset(mod, &mod->core_layout.size, s, i);
++			s->sh_entsize = (get_offset(mod, &mod->fixed_layout.size, s, i)
++								 | FIXED_OFFSET_MASK);
+ 			pr_debug("\t%s\n", sname);
+ 		}
+ 		switch (m) {
+ 		case 0: /* executable */
+-			mod->core_layout.size = debug_align(mod->core_layout.size);
+-			mod->core_layout.text_size = mod->core_layout.size;
++			mod->fixed_layout.size = debug_align(mod->fixed_layout.size);
++			mod->fixed_layout.text_size = mod->fixed_layout.size;
+ 			break;
+ 		case 1: /* RO: text and ro-data */
+-			mod->core_layout.size = debug_align(mod->core_layout.size);
+-			mod->core_layout.ro_size = mod->core_layout.size;
++			mod->fixed_layout.size = debug_align(mod->fixed_layout.size);
++			mod->fixed_layout.ro_size = mod->fixed_layout.size;
+ 			break;
+ 		case 2: /* RO after init */
+-			mod->core_layout.size = debug_align(mod->core_layout.size);
+-			mod->core_layout.ro_after_init_size = mod->core_layout.size;
++			mod->fixed_layout.size = debug_align(mod->fixed_layout.size);
++			mod->fixed_layout.ro_after_init_size = mod->fixed_layout.size;
+ 			break;
+-		case 4: /* whole core */
+-			mod->core_layout.size = debug_align(mod->core_layout.size);
++		case 4: /* whole init */
++			mod->fixed_layout.size = debug_align(mod->fixed_layout.size);
+ 			break;
+ 		}
+ 	}
+-
++} else {
+ 	pr_debug("Init section allocation order:\n");
+ 	for (m = 0; m < ARRAY_SIZE(masks); ++m) {
+ 		for (i = 0; i < info->hdr->e_shnum; ++i) {
+@@ -2445,6 +2504,39 @@
+ 			break;
+ 		}
+ 	}
++} /* is_randomizable_module(mod) */
++
++	pr_debug("Core section allocation order:\n");
++	for (m = 0; m < ARRAY_SIZE(masks); ++m) {
++		for (i = 0; i < info->hdr->e_shnum; ++i) {
++			Elf_Shdr *s = &info->sechdrs[i];
++			const char *sname = info->secstrings + s->sh_name;
++
++			if ((s->sh_flags & masks[m][0]) != masks[m][0]
++			    || (s->sh_flags & masks[m][1])
++			    || s->sh_entsize != ~0UL)
++				continue;
++			s->sh_entsize = get_offset(mod, &mod->core_layout.size, s, i);
++			pr_debug("\t%s\n", sname);
++		}
++		switch (m) {
++		case 0: /* executable */
++			mod->core_layout.size = debug_align(mod->core_layout.size);
++			mod->core_layout.text_size = mod->core_layout.size;
++			break;
++		case 1: /* RO: text and ro-data */
++			mod->core_layout.size = debug_align(mod->core_layout.size);
++			mod->core_layout.ro_size = mod->core_layout.size;
++			break;
++		case 2: /* RO after init */
++			mod->core_layout.size = debug_align(mod->core_layout.size);
++			mod->core_layout.ro_after_init_size = mod->core_layout.size;
++			break;
++		case 4: /* whole core */
++			mod->core_layout.size = debug_align(mod->core_layout.size);
++			break;
++		}
++	}
+ }
+ 
+ static void set_license(struct module *mod, const char *license)
+@@ -2636,6 +2728,7 @@
+ 	/* Compute total space required for the core symbols' strtab. */
+ 	for (ndst = i = 0; i < nsrc; i++) {
+ 		if (i == 0 || is_livepatch_module(mod) ||
++		    is_randomizable_module(mod) ||
+ 		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
+ 				   info->index.pcpu)) {
+ 			strtab_size += strlen(&info->strtab[src[i].st_name])+1;
+@@ -2695,6 +2788,7 @@
+ 	src = mod->kallsyms->symtab;
+ 	for (ndst = i = 0; i < mod->kallsyms->num_symtab; i++) {
+ 		if (i == 0 || is_livepatch_module(mod) ||
++		    is_randomizable_module(mod) ||
+ 		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
+ 				   info->index.pcpu)) {
+ 			dst[ndst] = src[i];
+@@ -3042,6 +3136,12 @@
+ 	if (err)
+ 		return err;
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++	if (get_modinfo(info, "randomizable")) {
++		mod->randomizable = true;
++	}
++#endif
++
+ 	/* Set up license info based on the info section */
+ 	set_license(mod, get_modinfo(info, "license"));
+ 
+@@ -3162,6 +3262,21 @@
+ 	memset(ptr, 0, mod->core_layout.size);
+ 	mod->core_layout.base = ptr;
+ 
++	/* Allocate fixed section */
++	if (mod->fixed_layout.size) {
++		ptr = module_alloc(mod->fixed_layout.size);
++		kmemleak_not_leak(ptr);
++		if (!ptr) {
++			module_memfree(mod->core_layout.base);
++			return -ENOMEM;
++		}
++
++		memset(ptr, 0, mod->fixed_layout.size);
++		mod->fixed_layout.base = ptr;
++	} else {
++		mod->fixed_layout.base = NULL;
++	}
++
+ 	if (mod->init_layout.size) {
+ 		ptr = module_alloc(mod->init_layout.size);
+ 		/*
+@@ -3172,6 +3287,9 @@
+ 		 */
+ 		kmemleak_ignore(ptr);
+ 		if (!ptr) {
++			if (mod->fixed_layout.base) {
++				module_memfree(mod->fixed_layout.base);
++			}
+ 			module_memfree(mod->core_layout.base);
+ 			return -ENOMEM;
+ 		}
+@@ -3192,6 +3310,9 @@
+ 		if (shdr->sh_entsize & INIT_OFFSET_MASK)
+ 			dest = mod->init_layout.base
+ 				+ (shdr->sh_entsize & ~INIT_OFFSET_MASK);
++		else if (shdr->sh_entsize & FIXED_OFFSET_MASK)
++			dest = mod->fixed_layout.base
++				+ (shdr->sh_entsize & ~FIXED_OFFSET_MASK);
+ 		else
+ 			dest = mod->core_layout.base + shdr->sh_entsize;
+ 
+@@ -3266,6 +3387,9 @@
+ 				   + mod->init_layout.size);
+ 	flush_icache_range((unsigned long)mod->core_layout.base,
+ 			   (unsigned long)mod->core_layout.base + mod->core_layout.size);
++	if (mod->fixed_layout.base)
++		flush_icache_range((unsigned long)mod->fixed_layout.base,
++			   (unsigned long)mod->fixed_layout.base + mod->fixed_layout.size);
+ 
+ 	set_fs(old_fs);
+ }
+@@ -3278,6 +3402,11 @@
+ 	return 0;
+ }
+ 
++int __weak module_arch_preinit(struct module *mod)
++{
++	return 0;
++}
++
+ /* module_blacklist is a comma-separated list of module names */
+ static char *module_blacklist;
+ static bool blacklisted(const char *module_name)
+@@ -3309,11 +3438,23 @@
+ 	if (err)
+ 		return ERR_PTR(err);
+ 
++	mod = info->mod;
++	if (is_randomizable_module(mod)) {
++		/* Early set up klp_info with temporary data */
++		mod->klp_info = kmalloc(sizeof(*mod->klp_info), GFP_KERNEL);
++		if (mod->klp_info == NULL)
++			return ERR_PTR(-ENOMEM);
++		memcpy(&mod->klp_info->hdr, info->hdr, sizeof(mod->klp_info->hdr));
++		mod->klp_info->symndx = info->index.sym;
++		mod->klp_info->secstrings = info->secstrings;
++		mod->klp_info->sechdrs = info->sechdrs;
++	}
++
+ 	/* Allow arches to frob section contents and sizes.  */
+ 	err = module_frob_arch_sections(info->hdr, info->sechdrs,
+ 					info->secstrings, info->mod);
+ 	if (err < 0)
+-		return ERR_PTR(err);
++		goto free_klp;
+ 
+ 	/* We will do a special allocation for per-cpu sections later. */
+ 	info->sechdrs[info->index.pcpu].sh_flags &= ~(unsigned long)SHF_ALLOC;
+@@ -3345,12 +3486,17 @@
+ 	/* Allocate and move to the final place */
+ 	err = move_module(info->mod, info);
+ 	if (err)
+-		return ERR_PTR(err);
++		goto free_klp;
+ 
+ 	/* Module has been copied to its final place now: return it. */
+ 	mod = (void *)info->sechdrs[info->index.mod].sh_addr;
+ 	kmemleak_load_module(mod, info);
+ 	return mod;
++
++ free_klp:
++	if (is_randomizable_module(mod))
++		kfree(mod->klp_info);
++	return ERR_PTR(err);
+ }
+ 
+ /* mod is no longer valid after this! */
+@@ -3359,7 +3505,7 @@
+ 	percpu_modfree(mod);
+ 	module_arch_freeing_init(mod);
+ 	module_memfree(mod->init_layout.base);
+-	module_memfree(mod->core_layout.base);
++	module_memfree_non_init(mod);
+ }
+ 
+ int __weak module_finalize(const Elf_Ehdr *hdr,
+@@ -3793,7 +3939,7 @@
+ 	if (err < 0)
+ 		goto coming_cleanup;
+ 
+-	if (is_livepatch_module(mod)) {
++	if (is_livepatch_module(mod) || is_randomizable_module(mod)) {
+ 		err = copy_module_elf(mod, info);
+ 		if (err < 0)
+ 			goto sysfs_cleanup;
+@@ -3805,6 +3951,8 @@
+ 	/* Done! */
+ 	trace_module_load(mod);
+ 
++	module_arch_preinit(mod);
++
+ 	return do_init_module(mod);
+ 
+  sysfs_cleanup:
+@@ -4421,6 +4569,40 @@
+ 	pr_cont("\n");
+ }
+ 
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE
++static void update_module_klp(struct module *mod, unsigned long delta)
++{
++	unsigned int i;
++	Elf_Shdr *shdrs = mod->klp_info->sechdrs;
++
++//	printk("update_module_klp\n");
++
++	/* Update Elf_Shdr.sh_addr of core sections */
++	for (i = 1; i < mod->klp_info->hdr.e_shnum; i++) {
++		if (!module_is_fixed_section(mod, i))
++			INC_BY_DELTA(shdrs[i].sh_addr, delta);
++	}
++
++}
++
++void update_module_ref(struct module *mod, unsigned long delta){
++//	printk("update_module_ref\n");
++
++	mutex_lock(&module_mutex);
++
++	mod_tree_remove(mod);
++
++	INC_BY_DELTA(mod->core_layout.base, delta);
++
++	mod_update_bounds(mod);
++	mod_tree_insert(mod);
++
++	update_module_klp(mod, delta);
++
++	mutex_unlock(&module_mutex);
++}
++#endif /* CONFIG_X86_MODULE_RERANDOMIZE */
++
+ #ifdef CONFIG_MODVERSIONS
+ /* Generate the signature for all relevant module structures here.
+  * If these change, we don't want to try to parse the module. */
+@@ -4433,3 +4615,4 @@
+ }
+ EXPORT_SYMBOL(module_layout);
+ #endif
++
+diff -urN linux-5.0.2/kernel/randmod.c linux-5.0.2-kaslr/kernel/randmod.c
+--- linux-5.0.2/kernel/randmod.c	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/randmod.c	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,218 @@
++#include <linux/module.h>	/* Needed by all modules */
++#include <linux/kernel.h>	/* Needed for KERN_INFO */
++#include <linux/moduleparam.h>
++#include <linux/delay.h>
++#include <linux/list.h>
++#include <linux/debugfs.h>
++#include <linux/uaccess.h>
++#include <linux/kthread.h>
++#include <linux/slab.h>
++
++#define STAT_PRINT_PERIOD 5 /* seconds */
++#define MAX_MODULES	10
++
++static struct module *module_mod[MAX_MODULES] = {NULL};
++static char *module_names[MAX_MODULES] = {NULL};
++static int modules_num = 0;
++module_param_array(module_names, charp, &modules_num, 0000);
++MODULE_PARM_DESC(module_names, "Name(s) of module(s) to re-randomize");
++
++static int manual_unmap = false;
++module_param(manual_unmap, int, 0);
++MODULE_PARM_DESC(manual_unmap, "Unmap old memory after relocation?");
++
++static int randomize_stack = true;
++module_param(randomize_stack, int, 0);
++MODULE_PARM_DESC(randomize_stack, "Re-Randomize Stack?");
++
++static int rand_period = 20;
++module_param(rand_period, int, 0);
++MODULE_PARM_DESC(rand_period, "Randomization Period in ms");
++
++static struct workqueue_struct *my_wq = NULL;
++
++typedef struct {
++    struct delayed_work my_work;
++    void *address;
++} UnmapWork;
++
++static void delayed_unmap_cb(struct work_struct *work)
++{
++    UnmapWork *my_work = (UnmapWork *)work;
++
++	printk("Manual Memory Freed %lx\n", (unsigned long) my_work->address);
++	unmap_module(my_work->address, 0, 0);
++
++	kfree( (void *)work );
++}
++
++int delayed_unmap(void *address, int delay)
++{
++	UnmapWork *work = kzalloc(sizeof(*work), GFP_KERNEL);
++	if(!work)
++		return -1;
++
++	work->address = address;
++	INIT_DELAYED_WORK((struct delayed_work *)work, delayed_unmap_cb);
++	queue_delayed_work(my_wq, (struct delayed_work *)work, msecs_to_jiffies(delay));
++	
++	return 0;
++}
++
++static int find_modules(int num, char **names, struct module **mods)
++{
++	int i;
++	int err = 0;
++
++	for(i=0; i<num; i++) {
++		struct module *mod = find_module(names[i]);
++		if (mod == NULL || !is_randomizable_module(mod)) {
++			err++;
++			mods[i] = NULL;
++		} else {
++			mods[i] = mod;
++		}
++	}
++
++	return err;
++}
++
++int randomize(struct module *mod)
++{
++	void *oldAddr, *newAddr;
++
++	oldAddr = mod->core_layout.base;
++
++	newAddr = module_rerandomize(mod);
++	if(newAddr == NULL || newAddr != mod->core_layout.base)
++		return -1;
++
++	if(manual_unmap){
++		delayed_unmap(oldAddr, manual_unmap);
++	}
++
++	return 0;
++}
++
++
++static struct task_struct *kthread = NULL;
++int work_func(void *args)
++{
++	int ret, i;
++	unsigned long min = 1000LU * rand_period;
++	unsigned long max = min + 500;
++	time64_t time = ktime_get_seconds();
++
++	printk("Randomize: kthread started\n");
++	do{
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++		if(randomize_stack)
++			module_rerandomize_stack();
++#endif
++
++		for (i=0; i<modules_num; i++) {
++			ret = randomize(module_mod[i]);
++			if(ret) break;
++		}
++
++		if(ret) {
++			pr_err("Error Randomizing\n");
++			break;
++		} else {
++			profile_rand.count_rand++;
++		}
++
++		if(rand_period == 0)
++			break;
++
++		if(rand_period > 20) {
++			msleep(rand_period);
++		} else {
++			usleep_range(min, max);
++		}
++
++		/* Periodically print the statistics */
++		if (time < ktime_get_seconds()) {
++			time = ktime_get_seconds() + STAT_PRINT_PERIOD;
++			print_profile_rand();
++		}
++	}while(!kthread_should_stop());
++
++	printk("Randomize: kthread stopped\n");
++	print_profile_rand();
++	kthread = NULL;
++
++	return 0;
++}
++
++
++int init_module(void){
++	int err, i;
++
++	init_profile_rand();
++
++	printk("Module Name(s): ");
++	for (i=0; i<modules_num; i++) {
++		printk(KERN_CONT "%s ", module_names[i]);
++	}
++	printk("Stack Randomization: %d\n", randomize_stack);
++	printk("Period: %d\n", rand_period);
++	printk("Manual Unmap: %d\n", manual_unmap);
++
++	if (modules_num == 0) {
++		pr_err("No module specified\n");
++		return -1;
++	}
++
++	err = find_modules(modules_num, module_names, module_mod);
++
++	if (err) {
++		printk("ERROR Following modules not found or can't be randomized: \n");
++		for (i=0; i<modules_num; i++) {
++			if (module_mod[i] == NULL)
++				printk(KERN_CONT "%s ", module_names[i]);
++		}
++		pr_err("Stopping\n");
++		return -1;
++	}
++
++	/* Init WorkQueue */
++	if(manual_unmap){
++		my_wq = create_workqueue("unmap_queue");
++	
++		if(!my_wq){
++			pr_err("Could not create workqueue\n");
++			return -1;
++		}
++	}
++
++	/* Start worker kthread */
++	kthread = kthread_run(work_func, NULL, "randomizer");
++	if(kthread == ERR_PTR(-ENOMEM)){
++		pr_err("Could not run kthread\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++void cleanup_module(void){
++	if(kthread){
++		kthread_stop(kthread);
++	}
++
++	if(manual_unmap){
++		/* allow delayed unmap */
++		mdelay(manual_unmap);
++		mdelay(500);
++
++		if(my_wq){
++			flush_workqueue( my_wq );
++			destroy_workqueue( my_wq );
++		}
++	}
++}
++
++MODULE_AUTHOR("Hassan Nadeem <hnadeem@vt.edu>");
++MODULE_LICENSE("GPL v2");
++MODULE_VERSION("0.1");
+diff -urN linux-5.0.2/kernel/smr/bits/c11.h linux-5.0.2-kaslr/kernel/smr/bits/c11.h
+--- linux-5.0.2/kernel/smr/bits/c11.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/c11.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,133 @@
++/*
++  Copyright (c) 2018, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __LF_C11_H
++#define __LF_C11_H 1
++
++#include <stdatomic.h>
++
++#define LFATOMIC(x)				_Atomic(x)
++#define LFATOMIC_VAR_INIT(x)	ATOMIC_VAR_INIT(x)
++
++static inline void __lfaba_init(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t val)
++{
++	atomic_init(obj, val);
++}
++
++static inline lfatomic_big_t __lfaba_load(_Atomic(lfatomic_big_t) * obj,
++		memory_order order)
++{
++#if __LFLOAD_SPLIT(LFATOMIC_BIG_WIDTH) == 1
++	lfatomic_big_t res;
++	_Atomic(lfatomic_t) * hobj = (_Atomic(lfatomic_t) *) obj;
++	lfatomic_t * hres = (lfatomic_t *) &res;
++
++	hres[0] = atomic_load_explicit(hobj, order);
++	hres[1] = atomic_load_explicit(hobj + 1, order);
++	return res;
++#elif __LFLOAD_SPLIT(LFATOMIC_BIG_WIDTH) == 0
++	return atomic_load_explicit(obj, order);
++#endif
++}
++
++static inline bool __lfaba_cmpxchg_weak(_Atomic(lfatomic_big_t) * obj,
++	lfatomic_big_t * expected, lfatomic_big_t desired,
++	memory_order succ, memory_order fail)
++{
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,
++					succ, fail);
++}
++
++static inline bool __lfaba_cmpxchg_strong(_Atomic(lfatomic_big_t) * obj,
++	lfatomic_big_t * expected, lfatomic_big_t desired,
++	memory_order succ, memory_order fail)
++{
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,
++					succ, fail);
++}
++
++#define __lfepoch_init			atomic_init
++#define __lfepoch_load			atomic_load_explicit
++#define __lfepoch_cmpxchg_weak	atomic_compare_exchange_weak_explicit
++#define __lfepoch_fetch_add		atomic_fetch_add_explicit
++
++#define __LFREF_CMPXCHG_FULL(dtype_t)	(1)
++
++#define __LFREF_ATOMICS_IMPL(w, type_t, dtype_t)							\
++static inline void __lfref_init##w(_Atomic(dtype_t) * obj, dtype_t val)		\
++{																			\
++	atomic_init(obj, val);													\
++}																			\
++																			\
++static inline dtype_t __lfref_load##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (!__LFLOAD_SPLIT(sizeof(dtype_t) * 8)) {								\
++		return atomic_load_explicit(obj, order);							\
++	} else {																\
++		dtype_t res;														\
++		_Atomic(type_t) * hobj = (_Atomic(type_t) *) obj;					\
++		type_t * hres = (type_t *) &res;									\
++																			\
++		hres[0] = atomic_load_explicit(hobj, order);						\
++		hres[1] = atomic_load_explicit(hobj + 1, order);					\
++		return res;															\
++	}																		\
++}																			\
++																			\
++static inline type_t __lfref_link##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (!__LFLOAD_SPLIT(sizeof(dtype_t) * 8)) {								\
++		return (atomic_load_explicit(obj, order) & ~__lfref_mask##w) >>		\
++					__lfrptr_shift##w;										\
++	} else {																\
++		_Atomic(type_t) * hobj = (_Atomic(type_t) *) obj;					\
++		return atomic_load_explicit(&hobj[__LFREF_LINK], order);			\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline dtype_t __lfref_fetch_add##w(_Atomic(dtype_t) * obj,			\
++		dtype_t arg, memory_order order)									\
++{																			\
++	return atomic_fetch_add_explicit(obj, arg, order);						\
++}
++
++#endif /* !__LF_C11_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/config.h linux-5.0.2-kaslr/kernel/smr/bits/config.h
+--- linux-5.0.2/kernel/smr/bits/config.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/config.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,84 @@
++/*
++  Copyright (c) 2017, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __BITS_LFCONFIG_H
++#define __BITS_LFCONFIG_H	1
++
++#ifndef __KERNEL__
++# include <inttypes.h>
++#else
++# include <linux/types.h>
++#endif
++
++/* For the following architectures, it is cheaper to use split (word-atomic)
++   loads whenever possible. */
++#if defined(__i386__) || defined(__x86_64__) || defined(__arm__) ||	\
++	defined(__aarch64__)
++# define __LFLOAD_SPLIT(dtype_width)	(dtype_width > LFATOMIC_WIDTH)
++#else
++# define __LFLOAD_SPLIT(dtype_width)	0
++#endif
++
++/* IA-64 provides a 128-bit single-compare/double-swap instruction, so
++   LFCMPXCHG_SPLIT is true for 128-bit types. */
++#if defined(__ia64__)
++# define __LFCMPXCHG_SPLIT(dtype_width)	(dtype_width > LFATOMIC_WIDTH)
++#else
++# define __LFCMPXCHG_SPLIT(dtype_width)	0
++#endif
++
++#if defined(__x86_64__) || defined (__aarch64__) || defined(__powerpc64__)	\
++	|| (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI64)
++typedef uint64_t lfepoch_t;
++typedef int64_t lfepoch_signed_t;
++typedef uint64_t lfatomic_t;
++typedef __uint128_t lfatomic_big_t;
++# define LFATOMIC_LOG2			3
++# define LFATOMIC_WIDTH			64
++# define LFATOMIC_BIG_WIDTH		128
++#elif defined(__i386__) || defined(__arm__) || defined(__powerpc__)			\
++	|| (defined(__mips__) &&												\
++		(_MIPS_SIM == _MIPS_SIM_ABI32 || _MIPS_SIM == _MIPS_SIM_NABI32))
++# if defined(__i386__)
++typedef uint64_t lfepoch_t; /* Still makes sense to use 64-bit numbers. */
++typedef int64_t lfepoch_signed_t;
++# else
++typedef uint32_t lfepoch_t;
++typedef int32_t lfepoch_signed_t;
++# endif
++typedef uint32_t lfatomic_t;
++typedef uint64_t lfatomic_big_t;
++# define LFATOMIC_LOG2			2
++# define LFATOMIC_WIDTH			32
++# define LFATOMIC_BIG_WIDTH		64
++#else
++typedef uintptr_t lfepoch_t;
++typedef uintptr_t lfatomic_t;
++typedef uintptr_t lfatomic_big_t;
++# if UINTPTR_MAX == UINT32_C(0xFFFFFFFF)
++#  define LFATOMIC_LOG2			2
++#  define LFATOMIC_WIDTH		32
++#  define LFATOMIC_BIG_WIDTH	32
++# elif UINTPTR_MAX == UINT64_C(0xFFFFFFFFFFFFFFFF)
++#  define LFATOMIC_LOG2			3
++#  define LFATOMIC_WIDTH		64
++#  define LFATOMIC_BIG_WIDTH	64
++# endif
++#endif
++
++/* XXX: True for x86/x86-64 but needs to be properly defined for other CPUs. */
++#define LF_CACHE_SHIFT		7U
++#define LF_CACHE_BYTES		(1U << LF_CACHE_SHIFT)
++
++/* Allow to use LEA for x86/x86-64. */
++#if defined(__i386__) || defined(__x86_64__)
++# define __LFMERGE(x,y)	((x) + (y))
++#else
++# define __LFMERGE(x,y)	((x) | (y))
++#endif
++
++#endif /* !__BITS_LFCONFIG_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/gcc_x86.h linux-5.0.2-kaslr/kernel/smr/bits/gcc_x86.h
+--- linux-5.0.2/kernel/smr/bits/gcc_x86.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/gcc_x86.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,204 @@
++/*
++  Copyright (c) 2018, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __LF_GCC_X86_H
++#define __LF_GCC_X86_H 1
++
++#include <stdatomic.h>
++
++#define LFATOMIC(x)				_Atomic(x)
++#define LFATOMIC_VAR_INIT(x)	ATOMIC_VAR_INIT(x)
++
++static inline void __lfbig_init(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t val)
++{
++	*((volatile lfatomic_big_t *) obj) = val;
++}
++
++static inline lfatomic_big_t __lfbig_load(_Atomic(lfatomic_big_t) * obj,
++		memory_order order)
++{
++	return *((volatile lfatomic_big_t *) obj);
++}
++
++static inline bool __lfbig_cmpxchg_strong(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t * expected, lfatomic_big_t desired,
++		memory_order succ, memory_order fail)
++{
++	lfatomic_t low = (lfatomic_t) desired;
++	lfatomic_t high = (lfatomic_t) (desired >> (sizeof(lfatomic_t) * 8));
++	bool result;
++
++#if defined(__x86_64__)
++# define __LFX86_CMPXCHG "cmpxchg16b"
++#elif defined(__i386__)
++# define __LFX86_CMPXCHG "cmpxchg8b"
++#endif
++	__asm__ __volatile__ ("lock " __LFX86_CMPXCHG " %0"
++						  : "+m" (*obj), "=@ccz" (result), "+A" (*expected)
++						  : "b" (low), "c" (high)
++	);
++#undef __LFX86_CMPXCHG
++
++	return result;
++}
++
++static inline bool __lfbig_cmpxchg_weak(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t * expected, lfatomic_big_t desired,
++		memory_order succ, memory_order fail)
++{
++	return __lfbig_cmpxchg_strong(obj, expected, desired, succ, fail);
++}
++
++static inline lfatomic_big_t __lfbig_fetch_add(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t arg, memory_order order)
++{
++	lfatomic_big_t new_val, old_val = __lfbig_load(obj, order);
++	do {
++		new_val = old_val + arg;
++	} while (!__lfbig_cmpxchg_weak(obj, &old_val, new_val, order, order));
++	__LF_ASSUME(new_val == old_val + arg);
++	return old_val;
++}
++
++#define __lfaba_init			__lfbig_init
++#define __lfaba_load			__lfbig_load
++#define __lfaba_cmpxchg_weak	__lfbig_cmpxchg_weak
++#define __lfaba_cmpxchg_strong	__lfbig_cmpxchg_strong
++
++static inline void __lfepoch_init(_Atomic(lfepoch_t) * obj, lfepoch_t val)
++{
++	atomic_init(obj, val);
++}
++
++static inline lfepoch_t __lfepoch_load(_Atomic(lfepoch_t) * obj,
++		memory_order order)
++{
++	/* Already uses atomic 64-bit FPU loads for i386. */
++	return atomic_load_explicit(obj, order);
++}
++
++static inline bool __lfepoch_cmpxchg_weak(_Atomic(lfepoch_t) * obj,
++		lfepoch_t * expected, lfepoch_t desired,
++		memory_order succ, memory_order fail)
++{
++#ifdef __i386__
++	return __lfbig_cmpxchg_weak((_Atomic(lfatomic_big_t) *) obj,
++				(lfatomic_big_t *) expected, desired, succ, fail);
++#else
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,
++				succ, fail);
++#endif
++}
++
++static inline lfepoch_t __lfepoch_fetch_add(_Atomic(lfepoch_t) * obj,
++		lfepoch_t arg, memory_order order)
++{
++#ifdef __i386__
++	return __lfbig_fetch_add((_Atomic(lfatomic_big_t) *) obj, arg, order);
++#else
++	return atomic_fetch_add_explicit(obj, arg, order);
++#endif
++}
++
++#define __LFREF_CMPXCHG_FULL(dtype_t)	(1)
++
++#define __LFREF_ATOMICS_IMPL(w, type_t, dtype_t)							\
++static inline void __lfref_init##w(_Atomic(dtype_t) * obj, dtype_t val)		\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		atomic_init(obj, val);												\
++	} else {																\
++		__lfbig_init((_Atomic(lfatomic_big_t) *) obj, val);					\
++	}																		\
++}																			\
++																			\
++static inline dtype_t __lfref_load##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_load_explicit(obj, order);							\
++	} else {																\
++		return __lfbig_load((_Atomic(lfatomic_big_t) *) obj, order);		\
++	}																		\
++}																			\
++																			\
++static inline type_t __lfref_link##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return (atomic_load_explicit(obj, order) & ~__lfref_mask##w) >>		\
++					__lfrptr_shift##w;										\
++	} else {																\
++		return *((volatile type_t *) obj + __LFREF_LINK);					\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_compare_exchange_weak_explicit(obj,					\
++			expected, desired, succ, fail);									\
++	} else {																\
++		return __lfbig_cmpxchg_weak((_Atomic(lfatomic_big_t) *) obj,		\
++				(lfatomic_big_t *) expected, desired, succ, fail);			\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_compare_exchange_strong_explicit(obj,					\
++			expected, desired, succ, fail);									\
++	} else {																\
++		return __lfbig_cmpxchg_strong((_Atomic(lfatomic_big_t) *) obj,		\
++				(lfatomic_big_t *) expected, desired, succ, fail);			\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_compare_exchange_weak_explicit(obj,					\
++			expected, desired, succ, fail);									\
++	} else {																\
++		return __lfbig_cmpxchg_weak((_Atomic(lfatomic_big_t) *) obj,		\
++				(lfatomic_big_t *) expected, desired, succ, fail);			\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_compare_exchange_strong_explicit(obj,					\
++			expected, desired, succ, fail);									\
++	} else {																\
++		return __lfbig_cmpxchg_strong((_Atomic(lfatomic_big_t) *) obj,		\
++				(lfatomic_big_t *) expected, desired, succ, fail);			\
++	}																		\
++}																			\
++																			\
++static inline dtype_t __lfref_fetch_add##w(_Atomic(dtype_t) * obj,			\
++		dtype_t arg, memory_order order)									\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_fetch_add_explicit(obj, arg, order);					\
++	} else {																\
++		return __lfbig_fetch_add((_Atomic(lfatomic_big_t) *) obj,			\
++				arg, order);												\
++	}																		\
++}
++
++#endif /* !__LF_GGC_X86_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/lf.h linux-5.0.2-kaslr/kernel/smr/bits/lf.h
+--- linux-5.0.2/kernel/smr/bits/lf.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/lf.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,139 @@
++/*
++  Copyright (c) 2017, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __BITS_LF_H
++#define __BITS_LF_H	1
++
++#ifndef __KERNEL__
++# include <inttypes.h>
++# include <sys/types.h>
++# include <stddef.h>
++# include <stdbool.h>
++# if UINTPTR_MAX == UINT32_C(0xFFFFFFFF)
++#  define __LFPTR_WIDTH	32
++typedef uint64_t lfref_t;
++# elif UINTPTR_MAX == UINT64_C(0xFFFFFFFFFFFFFFFF)
++#  define __LFPTR_WIDTH	64
++typedef __uint128_t lfref_t;
++# else
++#  error "Unsupported word length."
++# endif
++#else
++#include <linux/types.h>
++# ifdef CONFIG_64BIT
++#  define __LFPTR_WIDTH 64
++typedef __uint128_t lfref_t;
++# else
++#  define __LFPTR_WIDTH 32
++typedef uint64_t lfref_t;
++# endif
++#endif
++
++#include "config.h"
++
++#ifdef __GNUC__
++# define __LF_ASSUME(c) do { if (!(c)) __builtin_unreachable(); } while (0)
++#else
++# define __LF_ASSUME(c)
++#endif
++
++/* GCC does not have a sane implementation of wide atomics for x86-64
++   in recent versions, so use inline assembly workarounds whenever possible.
++   No aarch64 support in GCC for right now. */
++#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) &&	\
++	!defined(__llvm__) && defined(__GCC_ASM_FLAG_OUTPUTS__)
++# include "gcc_x86.h"
++#elif (defined(__i386__) || defined(__x86_64__)) && defined(__llvm__)
++# include "llvm_x86.h"
++#else
++# include "c11.h"
++#endif
++
++/* Reference counting. */
++#define __LFREF_IMPL(w, dtype_t)											\
++static const size_t __lfref_shift##w = sizeof(dtype_t) * 4;					\
++static const size_t __lfrptr_shift##w = 0;									\
++static const dtype_t __lfref_mask##w =										\
++				~(dtype_t) 0U << (sizeof(dtype_t) * 4);						\
++static const dtype_t __lfref_step##w =										\
++				(dtype_t) 1U << (sizeof(dtype_t) * 4);
++
++/* Pointer index for double-width types. */
++#ifdef __LITTLE_ENDIAN__
++# define __LFREF_LINK	0
++#else
++# define __LFREF_LINK	1
++#endif
++
++/* ABA tagging with split (word-atomic) load/cmpxchg operation. */
++#if __LFLOAD_SPLIT(LFATOMIC_BIG_WIDTH) == 1 ||								\
++		__LFCMPXCHG_SPLIT(LFATOMIC_BIG_WIDTH) == 1
++# define __LFABA_IMPL(w, type_t)											\
++static const size_t __lfaba_shift##w = sizeof(lfatomic_big_t) * 4;			\
++static const size_t __lfaptr_shift##w = 0;									\
++static const lfatomic_big_t __lfaba_mask##w =								\
++				~(lfatomic_big_t) 0U << (sizeof(lfatomic_big_t) * 4);		\
++static const lfatomic_big_t __lfaba_step##w =								\
++				(lfatomic_big_t) 1U << (sizeof(lfatomic_big_t) * 4);
++#endif
++
++/* ABA tagging when load/cmpxchg is not split. Note that unlike previous
++   case, __lfaptr_shift is required to be 0. */
++#if __LFLOAD_SPLIT(LFATOMIC_BIG_WIDTH) == 0 &&								\
++		__LFCMPXCHG_SPLIT(LFATOMIC_BIG_WIDTH) == 0
++# define __LFABA_IMPL(w, type_t)											\
++static const size_t __lfaba_shift##w = sizeof(type_t) * 8;					\
++static const size_t __lfaptr_shift##w = 0;									\
++static const lfatomic_big_t __lfaba_mask##w =								\
++				~(lfatomic_big_t) 0U << (sizeof(type_t) * 8);				\
++static const lfatomic_big_t __lfaba_step##w =								\
++				(lfatomic_big_t) 1U << (sizeof(type_t) * 8);
++#endif
++
++typedef bool (*lf_check_t) (void * data, void * addr, size_t size);
++
++static inline size_t lf_pow2(size_t order)
++{
++	return (size_t) 1U << order;
++}
++
++static inline bool LF_DONTCHECK(void * head, void * addr, size_t size)
++{
++	return true;
++}
++
++#define lf_container_of(addr, type, field)									\
++	(type *) ((char *) (addr) - offsetof(type, field))
++
++#ifdef __cplusplus
++# define LF_ERROR	UINTPTR_MAX
++#else
++# define LF_ERROR	((void *) UINTPTR_MAX)
++#endif
++
++/* Available on all 64-bit and CAS2 32-bit architectures. */
++#if LFATOMIC_BIG_WIDTH >= 64
++__LFABA_IMPL(32, uint32_t)
++__LFREF_IMPL(32, uint64_t)
++__LFREF_ATOMICS_IMPL(32, uint32_t, uint64_t)
++#endif
++
++/* Available on CAS2 64-bit architectures. */
++#if LFATOMIC_BIG_WIDTH >= 128
++__LFABA_IMPL(64, uint64_t)
++__LFREF_IMPL(64, __uint128_t)
++__LFREF_ATOMICS_IMPL(64, uint64_t, __uint128_t)
++#endif
++
++/* Available on CAS2 32/64-bit architectures. */
++#if LFATOMIC_BIG_WIDTH >= 2 * __LFPTR_WIDTH
++__LFABA_IMPL(, uintptr_t)
++__LFREF_IMPL(, lfref_t)
++__LFREF_ATOMICS_IMPL(, uintptr_t, lfref_t)
++#endif
++
++#endif	/* !__BITS_LF_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/lfsmr_cas2.h linux-5.0.2-kaslr/kernel/smr/bits/lfsmr_cas2.h
+--- linux-5.0.2/kernel/smr/bits/lfsmr_cas2.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/lfsmr_cas2.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,152 @@
++/*
++  Copyright (c) 2017, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __LFSMR_H
++# error "Do not include bits/lfsmr_cas2.h, use lfsmr.h instead."
++#endif
++
++#include "lfsmr_common.h"
++
++/* Generic implementation that uses CAS2 available on
++   i586+, x86-64 and ARMv6+. It is also adopted for
++   single-width LL/SC on PowerPC and MIPS. */
++
++/********************************************
++ *           head reference format
++ * +---------------------------------------+
++ * |  reference count  |      pointer      |
++ * +---------------------------------------+
++ *       32/64 bits          32/64 bits
++ *
++ ********************************************/
++
++#define __LFSMR_IMPL2(w, type_t, dtype_t)									\
++																			\
++struct lfsmr##w##_vector {													\
++	_Alignas(LF_CACHE_BYTES) LFATOMIC(dtype_t) head;						\
++	_Alignas(LF_CACHE_BYTES) char _pad[0];									\
++};																			\
++																			\
++struct lfsmr##w {															\
++	struct lfsmr##w##_vector vector[0];										\
++};																			\
++																			\
++__LFSMR_COMMON_IMPL(w, type_t)												\
++																			\
++static inline void lfsmr##w##_init(struct lfsmr##w * hdr, size_t order)		\
++{																			\
++	size_t count = (size_t) 1U << order, i = 0;								\
++	do {																	\
++		__lfref_init##w(&hdr->vector[i].head, 0);							\
++	} while (++i != count);													\
++}																			\
++																			\
++static inline type_t __lfsmr##w##_link(struct lfsmr##w * hdr, size_t vec)	\
++{																			\
++	return __lfref_link##w(&hdr->vector[vec].head, memory_order_acquire);	\
++}																			\
++																			\
++static inline bool lfsmr##w##_enter(struct lfsmr##w * hdr, size_t vec,		\
++		lfsmr##w##_handle_t * smr, const void * base, lf_check_t check)		\
++{																			\
++	dtype_t head = __lfref_fetch_add##w(&hdr->vector[vec].head,				\
++						__lfref_step##w, memory_order_acq_rel);				\
++	*smr = (lfsmr##w##_handle_t)											\
++		((head & ~__lfref_mask##w) >> __lfrptr_shift##w);					\
++	return true;															\
++}																			\
++																			\
++static inline bool __lfsmr##w##_leave(struct lfsmr##w * hdr, size_t vec,	\
++		size_t order, lfsmr##w##_handle_t smr, type_t * list,				\
++		const void * base, lf_check_t check)								\
++{																			\
++	const type_t addend = ((~(type_t) 0U) >> order) + 1U;					\
++	struct lfsmr##w##_node * node;											\
++	dtype_t head, last;														\
++	type_t next = next; /* Silence 'uninitialized' warnings. */				\
++	uintptr_t start, curr;													\
++																			\
++	last = __lfref_load##w(&hdr->vector[vec].head, memory_order_acquire);	\
++	do {																	\
++		curr = (uintptr_t) ((last & ~__lfref_mask##w) >>					\
++						__lfrptr_shift##w);									\
++		if (curr != smr) {													\
++			node = lfsmr##w##_addr(curr, base);								\
++			if (!check(hdr, node, sizeof(*node)))							\
++				return false;												\
++			next = node->next[vec];											\
++		}																	\
++		head = (last - __lfref_step##w) & __lfref_mask##w;					\
++		if (!__LFREF_CMPXCHG_FULL(dtype_t) || head)							\
++			head |= last & ~__lfref_mask##w;								\
++	} while (!__lfref_cmpxchgref_weak##w(&hdr->vector[vec].head, &last,		\
++				head, memory_order_acq_rel, memory_order_acquire));			\
++	start = (uintptr_t) ((last & ~__lfref_mask##w) >> __lfrptr_shift##w);	\
++	if (!__LFREF_CMPXCHG_FULL(dtype_t) && start &&							\
++					!((head & __lfref_mask##w) >> __lfref_shift##w)) {		\
++		/* For an incomplete cmpxchg, perform an extra step. */				\
++		if (__lfref_cmpxchgptr_strong##w(&hdr->vector[vec].head, &head, 0,	\
++				memory_order_acq_rel, memory_order_acquire)) {				\
++			if (!__lfsmr##w##_adjust_refs(hdr, list, start, addend, base))	\
++				return false;												\
++		}																	\
++	} else if (!head && start != 0) {										\
++		if (!__lfsmr##w##_adjust_refs(hdr, list, start, addend, base))		\
++			return false;													\
++	}																		\
++	if (curr != smr) {														\
++		size_t threshold = 0;												\
++		return __lfsmr##w##_traverse(hdr, vec, order, NULL, list, base,		\
++					check, &threshold, next, (uintptr_t) smr);				\
++	}																		\
++	return true;															\
++}																			\
++																			\
++static inline bool __lfsmr##w##_retire(struct lfsmr##w * hdr,				\
++		size_t order, type_t first, lfsmr##w##_free_t smr_free,				\
++		const void * base)													\
++{																			\
++	const type_t addend = ((~(type_t) 0U) >> order) + 1U;					\
++	size_t count = (size_t) 1U << order, i = 0;								\
++	struct lfsmr##w##_node * node;											\
++	dtype_t head, last;														\
++	type_t curr = first, prev, refs, adjs = 0, list = 0;					\
++	bool do_adjs = false;													\
++																			\
++	/* Add to the retirement lists. */										\
++	node = lfsmr##w##_addr(curr, base);										\
++	do {																	\
++		last = __lfref_load##w(&hdr->vector[i].head, memory_order_acquire);	\
++		do {																\
++			refs = (type_t) ((last & __lfref_mask##w) >> __lfref_shift##w);	\
++			if (!refs) {													\
++				do_adjs = true;												\
++				adjs += addend;												\
++				goto next;													\
++			}																\
++			prev = (type_t) ((last & ~__lfref_mask##w) >>					\
++							__lfrptr_shift##w);								\
++			node->next[i] = prev;											\
++			head = (last & __lfref_mask##w) |								\
++				(((dtype_t) curr << __lfrptr_shift##w) & ~__lfref_mask##w);	\
++		} while (!__lfref_cmpxchgptr_weak##w(&hdr->vector[i].head, &last,	\
++					head, memory_order_acq_rel, memory_order_acquire));		\
++		/* Adjust the reference counter. */									\
++		if (prev && !__lfsmr##w##_adjust_refs(hdr, &list, prev,				\
++				addend + refs, base))										\
++			return false;													\
++		next: ;																\
++	} while (++i != count);													\
++																			\
++	if (do_adjs) {															\
++		if (!__lfsmr##w##_adjust_refs(hdr, &list, first, adjs, base))		\
++			return false;													\
++	}																		\
++																			\
++	__lfsmr##w##_free(hdr, list, smr_free, base);							\
++	return true;															\
++}
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/lfsmr_common.h linux-5.0.2-kaslr/kernel/smr/bits/lfsmr_common.h
+--- linux-5.0.2/kernel/smr/bits/lfsmr_common.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/lfsmr_common.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,147 @@
++/*
++  Copyright (c) 2017, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#if !defined(__LFSMR_H) && !defined(__LFSMRO_H)
++# error "Do not include bits/lfsmr_common.h, use lfsmr.h instead."
++#endif
++
++#include "lf.h"
++
++#define LFSMR_NUM_CPUS 64
++
++#define __LFSMR_COMMON_IMPL(w, type_t)										\
++typedef uintptr_t lfsmr##w##_handle_t;										\
++struct lfsmr##w;															\
++																			\
++struct lfsmr##w##_node {													\
++	LFATOMIC(type_t) refs;													\
++	type_t next[LFSMR_NUM_CPUS];												\
++};																			\
++																			\
++typedef void (*lfsmr##w##_free_t) (struct lfsmr##w *,						\
++		struct lfsmr##w##_node *);											\
++																			\
++static inline type_t __lfsmr##w##_link(struct lfsmr##w * hdr, size_t vec);	\
++static inline bool __lfsmr##w##_retire(struct lfsmr##w * hdr, size_t order,	\
++		type_t first, lfsmr##w##_free_t smr_free, const void * base);		\
++static inline bool lfsmr##w##_enter(struct lfsmr##w * hdr, size_t vec,		\
++		lfsmr##w##_handle_t * smr, const void * base, lf_check_t check);	\
++static inline bool __lfsmr##w##_leave(struct lfsmr##w * hdr, size_t vec,	\
++		size_t order, lfsmr##w##_handle_t smr, type_t * list,				\
++		const void * base, lf_check_t check);								\
++																			\
++static inline struct lfsmr##w##_node * lfsmr##w##_addr(						\
++	uintptr_t offset, const void * base)									\
++{																			\
++	return (struct lfsmr##w##_node *) ((uintptr_t) base + offset);			\
++}																			\
++																			\
++static inline bool __lfsmr##w##_adjust_refs(struct lfsmr##w * hdr,			\
++		type_t * list, type_t prev, type_t refs, const void * base)			\
++{																			\
++	struct lfsmr##w##_node * node;											\
++	node = lfsmr##w##_addr(prev, base);										\
++	if (atomic_fetch_add_explicit(&node->refs, refs,						\
++							memory_order_acq_rel) == -refs) {				\
++		node->next[0] = *list;												\
++		*list = prev;														\
++	}																		\
++	return true;															\
++}																			\
++																			\
++static inline bool __lfsmr##w##_traverse(struct lfsmr##w * hdr, size_t vec,	\
++	size_t order, lfsmr##w##_handle_t * smr, type_t * list,					\
++	const void * base, lf_check_t check, size_t * threshold,				\
++	uintptr_t next, uintptr_t end)											\
++{																			\
++	struct lfsmr##w##_node * node;											\
++	size_t length = 0;														\
++	uintptr_t curr;															\
++																			\
++	do {																	\
++		curr = next;														\
++		if (!curr)															\
++			break;															\
++		node = lfsmr##w##_addr(curr, base);									\
++		if (!check(hdr, node, sizeof(*node)))								\
++			return false;													\
++		next = node->next[vec];												\
++		/* If the last reference, put into the local list. */				\
++		if (atomic_fetch_sub_explicit(&node->refs, 1, memory_order_acq_rel)	\
++						== 1) {												\
++			node->next[0] = *list;											\
++			*list = curr;													\
++			if (*threshold && ++length >= *threshold) {						\
++				if (!__lfsmr##w##_leave(hdr, vec, order, *smr, list, base,	\
++										check))								\
++					return false;											\
++				*threshold = 0;												\
++			}																\
++		}																	\
++	} while (curr != end);													\
++																			\
++	return true;															\
++}																			\
++																			\
++static inline void __lfsmr##w##_free(struct lfsmr##w * hdr, type_t list,	\
++	lfsmr##w##_free_t smr_free, const void * base)							\
++{																			\
++	struct lfsmr##w##_node * node;											\
++																			\
++	while (list != 0) {														\
++		node = lfsmr##w##_addr(list, base);									\
++		list = node->next[0];												\
++		smr_free(hdr, node);												\
++	}																		\
++}																			\
++																			\
++static inline bool lfsmr##w##_leave(struct lfsmr##w * hdr, size_t vec,		\
++	size_t order, lfsmr##w##_handle_t smr, lfsmr##w##_free_t smr_free,		\
++	const void * base, lf_check_t check)									\
++{																			\
++	type_t list = 0;														\
++	if (!__lfsmr##w##_leave(hdr, vec, order, smr, &list, base, check))		\
++		return false;														\
++	__lfsmr##w##_free(hdr, list, smr_free, base);							\
++	return true;															\
++}																			\
++																			\
++static inline bool lfsmr##w##_trim(struct lfsmr##w * hdr, size_t vec,		\
++	size_t order, lfsmr##w##_handle_t * smr, lfsmr##w##_free_t smr_free,	\
++	const void * base, lf_check_t check, size_t threshold)					\
++{																			\
++	struct lfsmr##w##_node * node;											\
++	lfsmr##w##_handle_t end = *smr;											\
++	size_t new_threshold = threshold;										\
++	type_t link = __lfsmr##w##_link(hdr, vec);								\
++	type_t list = 0;														\
++																			\
++	if (link != end) {														\
++		*smr = link;														\
++		node = lfsmr##w##_addr(link, base);									\
++		if (!check(hdr, node, sizeof(*node)))								\
++			return false;													\
++		link = node->next[vec];													\
++		if (!__lfsmr##w##_traverse(hdr, vec, order, smr, &list, base,		\
++				check, &new_threshold, link, (uintptr_t) end))				\
++			return false;													\
++		__lfsmr##w##_free(hdr, list, smr_free, base);						\
++		/* Leave was called, i.e. new_threshold = 0. */						\
++		if (threshold != new_threshold)										\
++			return lfsmr##w##_enter(hdr, vec, smr, base, check);			\
++	}																		\
++	return true;															\
++}																			\
++																			\
++static inline bool lfsmr##w##_retire(struct lfsmr##w * hdr, size_t order,	\
++		struct lfsmr##w##_node * node, lfsmr##w##_free_t smr_free,			\
++		const void * base)													\
++{																			\
++	type_t first;															\
++	first = (type_t) ((uintptr_t) node) - (type_t) ((uintptr_t) base);		\
++	return __lfsmr##w##_retire(hdr, order, first, smr_free, base);			\
++}
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/bits/llvm_x86.h linux-5.0.2-kaslr/kernel/smr/bits/llvm_x86.h
+--- linux-5.0.2/kernel/smr/bits/llvm_x86.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/bits/llvm_x86.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,147 @@
++/*
++  Copyright (c) 2018, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __LF_LLVM_X86_H
++#define __LF_LLVM_X86_H 1
++
++#include <stdatomic.h>
++
++#define LFATOMIC(x)				_Atomic(x)
++#define LFATOMIC_VAR_INIT(x)	ATOMIC_VAR_INIT(x)
++
++static inline void __lfaba_init(_Atomic(lfatomic_big_t) * obj,
++		lfatomic_big_t val)
++{
++	atomic_init(obj, val);
++}
++
++static inline lfatomic_big_t __lfaba_load(_Atomic(lfatomic_big_t) * obj,
++		memory_order order)
++{
++	return *((volatile lfatomic_big_t *) obj);
++}
++
++static inline bool __lfaba_cmpxchg_weak(_Atomic(lfatomic_big_t) * obj,
++	lfatomic_big_t * expected, lfatomic_big_t desired,
++	memory_order succ, memory_order fail)
++{
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,
++					succ, fail);
++}
++
++static inline bool __lfaba_cmpxchg_strong(_Atomic(lfatomic_big_t) * obj,
++	lfatomic_big_t * expected, lfatomic_big_t desired,
++	memory_order succ, memory_order fail)
++{
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,
++					succ, fail);
++}
++
++static inline void __lfepoch_init(_Atomic(lfepoch_t) * obj, lfepoch_t val)
++{
++	atomic_init(obj, val);
++}
++
++static inline lfepoch_t __lfepoch_load(_Atomic(lfepoch_t) * obj,
++		memory_order order)
++{
++#ifdef __i386__
++	/* Avoid using cmpxchg8b for atomic loads. */
++	lfepoch_t result;
++	__asm__ __volatile__ ("fildq	%1\n\t"
++						  "fistpq	%0"
++						  : "=m" (result)
++						  : "m" (*obj)
++						  : "st");
++	return result;
++#else
++	return atomic_load_explicit(obj, order);
++#endif
++}
++
++static inline bool __lfepoch_cmpxchg_weak(_Atomic(lfepoch_t) * obj,
++		lfepoch_t * expected, lfepoch_t desired,
++		memory_order succ, memory_order fail)
++{
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,
++				succ, fail);
++}
++
++static inline lfepoch_t __lfepoch_fetch_add(_Atomic(lfepoch_t) * obj,
++		lfepoch_t arg, memory_order order)
++{
++	return atomic_fetch_add_explicit(obj, arg, order);
++}
++
++#define __LFREF_CMPXCHG_FULL(dtype_t)	(1)
++
++#define __LFREF_ATOMICS_IMPL(w, type_t, dtype_t)							\
++static inline void __lfref_init##w(_Atomic(dtype_t) * obj, dtype_t val)		\
++{																			\
++	atomic_init(obj, val);													\
++}																			\
++																			\
++static inline dtype_t __lfref_load##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return atomic_load_explicit(obj, order);							\
++	} else {																\
++		return *((volatile lfatomic_big_t *) obj);							\
++	}																		\
++}																			\
++																			\
++static inline type_t __lfref_link##w(_Atomic(dtype_t) * obj,				\
++		memory_order order)													\
++{																			\
++	if (sizeof(dtype_t) != sizeof(lfatomic_big_t)) {						\
++		return (atomic_load_explicit(obj, order) & ~__lfref_mask##w) >>		\
++					__lfrptr_shift##w;										\
++	} else {																\
++		return *((volatile type_t *) obj + __LFREF_LINK);					\
++	}																		\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgptr_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_weak##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_weak_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline bool __lfref_cmpxchgref_strong##w(_Atomic(dtype_t) * obj,		\
++		dtype_t * expected, dtype_t desired,								\
++		memory_order succ, memory_order fail)								\
++{																			\
++	return atomic_compare_exchange_strong_explicit(obj, expected, desired,	\
++			succ, fail);													\
++}																			\
++																			\
++static inline dtype_t __lfref_fetch_add##w(_Atomic(dtype_t) * obj,			\
++		dtype_t arg, memory_order order)									\
++{																			\
++	return atomic_fetch_add_explicit(obj, arg, order);						\
++}
++
++#endif /* !__LF_LLVM_X86_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr/lfsmr.h linux-5.0.2-kaslr/kernel/smr/lfsmr.h
+--- linux-5.0.2/kernel/smr/lfsmr.h	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr/lfsmr.h	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,45 @@
++/*
++  Copyright (c) 2017, Ruslan Nikolaev
++  All rights reserved.
++*/
++
++#ifndef __LFSMR_H
++#define __LFSMR_H	1
++
++#include "bits/lfsmr_cas2.h"
++
++/* Available on all architectures. */
++#define LFSMR_ALIGN	(_Alignof(struct lfsmr))
++#define LFSMR_SIZE(x)		\
++	((x) * sizeof(struct lfsmr_vector) + offsetof(struct lfsmr, vector))
++#if LFATOMIC_BIG_WIDTH >= 2 * __LFPTR_WIDTH &&	\
++		!__LFCMPXCHG_SPLIT(2 * __LFPTR_WIDTH)
++__LFSMR_IMPL2(, uintptr_t, lfref_t)
++#else
++__LFSMR_IMPL1(, uintptr_t)
++#endif
++
++#define LFSMR32_ALIGN	(_Alignof(struct lfsmr32))
++#define LFSMR32_SIZE(x)		\
++	((x) * sizeof(struct lfsmr32_vector) + offsetof(struct lfsmr32, vector))
++#if LFATOMIC_BIG_WIDTH >= 64 && !__LFCMPXCHG_SPLIT(64)
++__LFSMR_IMPL2(32, uint32_t, uint64_t)
++#else
++__LFSMR_IMPL1(32, uint32_t)
++#endif
++
++/* Available on 64-bit architectures. */
++#if LFATOMIC_WIDTH >= 64
++# define LFSMR64_ALIGN	(_Alignof(struct lfsmr64))
++# define LFSMR64_SIZE(x)		\
++	((x) * sizeof(struct lfsmr64_vector) + offsetof(struct lfsmr64, vector))
++# if LFATOMIC_BIG_WIDTH >= 128 && !__LFCMPXCHG_SPLIT(128)
++__LFSMR_IMPL2(64, uint64_t, __uint128_t)
++# else
++__LFSMR_IMPL1(64, uint64_t)
++# endif
++#endif
++
++#endif	/* !__LFSMR_H */
++
++/* vi: set tabstop=4: */
+diff -urN linux-5.0.2/kernel/smr.c linux-5.0.2-kaslr/kernel/smr.c
+--- linux-5.0.2/kernel/smr.c	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-kaslr/kernel/smr.c	2019-10-26 00:46:58.584840157 -0400
+@@ -0,0 +1,103 @@
++#include <linux/smp.h>
++#include <linux/slab.h>
++#include <linux/vmalloc.h>
++#include <linux/module.h>
++
++#include <smr/smr.h>
++#include "smr/lfsmr.h"
++
++static struct workqueue_struct *smr_wq = NULL;
++
++static union {
++	_Alignas(LFSMR_ALIGN) char data[LFSMR_SIZE(SMR_NUM)];
++	struct lfsmr header;
++} smr;
++
++struct SMR_Manager {
++	struct work_struct my_work;
++	smr_header header;
++	struct module *mod;
++	void *address;
++};
++
++static struct SMR_Manager * make_manager(struct module *mod, void *address)
++{
++	struct SMR_Manager *manager = kzalloc(sizeof(*manager), GFP_ATOMIC);
++	if(!manager)
++		return NULL;
++
++	manager->mod = mod;
++	manager->address = address;
++
++	return manager;
++}
++
++static void free_manager(struct SMR_Manager *manager)
++{
++	kfree(manager);
++}
++
++static void unmap_work_handler(struct work_struct *work)
++{
++	struct SMR_Manager *manager = (struct SMR_Manager *)work;
++
++	module_unmap(manager->mod, manager->address);
++#ifdef CONFIG_X86_MODULE_RERANDOMIZE_STACK
++	module_stack_empty_trash();
++#endif
++	free_manager(manager);
++	profile_rand.count_smr_free++;
++}
++
++void smr_init(void)
++{
++	lfsmr_init(&smr.header, SMR_ORDER);
++
++	if (!smr_wq)
++		smr_wq = create_workqueue("smr_wq");
++}
++
++static inline void smr_do_free(struct lfsmr * h, struct lfsmr_node * node)
++{
++	struct SMR_Manager *manager;
++	smr_header *header = (smr_header *) node;
++	manager = container_of(header, struct SMR_Manager, header);
++
++	INIT_WORK( (struct work_struct *)manager, unmap_work_handler );
++	queue_work( smr_wq, (struct work_struct *)manager);
++}
++
++smr_handle smr_enter(void)
++{
++	size_t vec = raw_smp_processor_id() % SMR_NUM;
++	smr_handle ret;
++	ret.vector = vec;
++	lfsmr_enter(&smr.header, vec, &ret.handle, 0, LF_DONTCHECK);
++	return ret;
++}
++
++void smr_leave(smr_handle handle)
++{
++	lfsmr_leave(&smr.header, handle.vector, SMR_ORDER, handle.handle,
++		smr_do_free, 0, LF_DONTCHECK);
++}
++
++int smr_retire(struct module *mod, void *address)
++{
++	struct SMR_Manager *manager = make_manager(mod, address);
++	if(!manager)
++		return -ENOMEM;
++
++	profile_rand.count_smr_retire++;
++
++	lfsmr_retire(&smr.header, SMR_ORDER, (struct lfsmr_node *)(&manager->header),
++		smr_do_free, 0);
++
++	return 0;
++}
++
++
++EXPORT_SYMBOL(smr_init);
++EXPORT_SYMBOL(smr_enter);
++EXPORT_SYMBOL(smr_leave);
++EXPORT_SYMBOL(smr_retire);
+diff -urN linux-5.0.2/mm/vmalloc.c linux-5.0.2-kaslr/mm/vmalloc.c
+--- linux-5.0.2/mm/vmalloc.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/mm/vmalloc.c	2019-10-26 00:46:58.584840157 -0400
+@@ -2752,3 +2752,122 @@
+ 
+ #endif
+ 
++static void unmap_deallocate_pages(struct vm_struct *area,
++		unsigned long start, unsigned long end)
++{
++	unsigned int i;
++
++	for (i = start; i < end; i++) {
++		struct page *page = area->pages[i];
++
++		BUG_ON(!page);
++		__free_pages(page, 0);
++	}
++}
++
++static int remap_create_phy_pages(struct vm_struct *area, gfp_t gfp_mask, int node,
++		unsigned long start, unsigned long end)
++{
++	unsigned int i;
++	const gfp_t alloc_mask = gfp_mask | __GFP_NOWARN;
++	const gfp_t highmem_mask = (gfp_mask & (GFP_DMA | GFP_DMA32)) ?
++					0 :
++					__GFP_HIGHMEM;
++
++	for (i = start; i < end; i++) {
++		struct page *page;
++
++		if (node == NUMA_NO_NODE)
++			page = alloc_page(alloc_mask|highmem_mask);
++		else
++			page = alloc_pages_node(node, alloc_mask|highmem_mask, 0);
++
++		if (unlikely(!page)) {
++			unmap_deallocate_pages(area, start, i);
++			return -1;
++		}
++		area->pages[i] = page;
++		if (gfpflags_allow_blocking(gfp_mask|highmem_mask))
++			cond_resched();
++	}
++
++	return 0;
++}
++
++void *remap_module(unsigned long addr, unsigned long size,
++		unsigned long new_phy_addr, unsigned long new_phy_size,
++		unsigned long align, unsigned long start, unsigned long end,
++		gfp_t gfp_mask, pgprot_t prot, unsigned long vm_flags,
++		int node, const void *caller)
++{
++	struct vmap_area *va;
++	struct vm_struct *area;
++	struct vm_struct *old_area;
++
++	/* Sanity check the addresses */
++	if(new_phy_size &&
++	  (new_phy_addr < addr ||
++	  new_phy_addr >= addr + size ||
++	  new_phy_addr + new_phy_size > addr + size ||
++	  !size || (size >> PAGE_SHIFT) > totalram_pages ||
++	  PAGE_ALIGN(size) != size ||
++	  PAGE_ALIGN(new_phy_addr) != new_phy_addr ||
++	  PAGE_ALIGN(new_phy_size) != new_phy_size)) {
++		pr_err("remap_module: Bad addresses\n");
++		return NULL;
++	}
++
++	va = find_vmap_area(addr);
++	if(va == NULL){
++		pr_err("remap_module: vmap_area is null\n");
++		return NULL;
++	}
++	old_area = va->vm;
++
++	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED |
++				vm_flags, start, end, node, gfp_mask, caller);
++	if (!area) {
++		pr_err("remap_module: __get_vm_area_node failed\n");
++		return NULL;
++	}
++
++	area->nr_pages = old_area->nr_pages;
++	area->pages = old_area->pages;
++	if (new_phy_size) {
++		unsigned int start = (new_phy_addr - addr)/PAGE_SIZE;
++		unsigned int end = start + new_phy_size/PAGE_SIZE;
++	//	printk("start = %u\n", start);
++	//	printk("end = %u\n", end);
++		if (remap_create_phy_pages(area, gfp_mask, node, start, end))
++			return NULL;
++	}
++
++	if (map_vm_area(area, prot, area->pages)) {
++		pr_err("remap_module: map_vm_area failed\n");
++		return NULL;
++	}
++
++	clear_vm_uninitialized_flag(area);
++	kmemleak_vmalloc(area, size, gfp_mask);
++
++	return area->addr;
++}
++EXPORT_SYMBOL(remap_module);
++
++// vfree()
++void unmap_module(const void *addr,
++		const void *new_phy_addr, unsigned long new_phy_size)
++{
++	if (new_phy_size) {
++		unsigned int start = (new_phy_addr - addr)/PAGE_SIZE;
++		unsigned int end = start + new_phy_size/PAGE_SIZE;
++		struct vm_struct *area = find_vmap_area((unsigned long)addr)->vm;
++		unmap_deallocate_pages(area, start, end);
++	}
++
++	vunmap(addr);
++}
++EXPORT_SYMBOL(unmap_module);
++
++// remove
++EXPORT_SYMBOL(__vmalloc_node_range);
+diff -urN linux-5.0.2/scripts/mod/modpost.c linux-5.0.2-kaslr/scripts/mod/modpost.c
+--- linux-5.0.2/scripts/mod/modpost.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/scripts/mod/modpost.c	2019-10-26 00:46:58.584840157 -0400
+@@ -699,6 +699,8 @@
+ 			mod->has_init = 1;
+ 		if (strcmp(symname, "cleanup_module") == 0)
+ 			mod->has_cleanup = 1;
++		if (strcmp(symname, "randomize_module") == 0)
++			mod->has_randomize = 1;
+ 		break;
+ 	}
+ }
+@@ -2105,6 +2107,8 @@
+ 	for (s = mod->unres; s; s = s->next) {
+ 		const char *basename;
+ 		exp = find_symbol(s->name);
++		if (strstarts(s->name, "__FIXED"))
++			continue;
+ 		if (!exp || exp->module == mod) {
+ 			if (have_vmlinux && !s->weak) {
+ 				if (warn_unresolved) {
+@@ -2172,6 +2176,10 @@
+ 		buf_printf(b, "#ifdef CONFIG_MODULE_UNLOAD\n"
+ 			      "\t.exit = cleanup_module,\n"
+ 			      "#endif\n");
++	if (mod->has_randomize)
++		buf_printf(b, "#ifdef CONFIG_X86_MODULE_RERANDOMIZE\n"
++			      "\t.rerandomize = randomize_module,\n"
++			      "#endif\n");
+ 	buf_printf(b, "\t.arch = MODULE_ARCH_INIT,\n");
+ 	buf_printf(b, "};\n");
+ }
+diff -urN linux-5.0.2/scripts/mod/modpost.h linux-5.0.2-kaslr/scripts/mod/modpost.h
+--- linux-5.0.2/scripts/mod/modpost.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/scripts/mod/modpost.h	2019-10-26 00:46:58.584840157 -0400
+@@ -118,6 +118,7 @@
+ 	int skip;
+ 	int has_init;
+ 	int has_cleanup;
++	int has_randomize;
+ 	struct buffer dev_table_buf;
+ 	char	     srcversion[25];
+ 	int is_dot_o;
+diff -urN linux-5.0.2/scripts/recordmcount.h linux-5.0.2-kaslr/scripts/recordmcount.h
+--- linux-5.0.2/scripts/recordmcount.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-kaslr/scripts/recordmcount.h	2019-10-26 00:46:58.584840157 -0400
+@@ -18,6 +18,15 @@
+  *
+  * Licensed under the GNU General Public License, version 2 (GPLv2).
+  */
++
++#ifndef R_X86_64_REX_GOTPCRELX
++	#define R_X86_64_REX_GOTPCRELX	42
++#endif
++
++#ifndef R_X86_64_GOTPCRELX
++	#define R_X86_64_GOTPCRELX	41
++#endif
++
+ #undef append_func
+ #undef is_fake_mcount
+ #undef fn_is_fake_mcount

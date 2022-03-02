@@ -1,0 +1,11 @@
+*.mod.c
+*.mod.o
+*.cmd
+*.o
+*.ko
+modules.order
+Module.symvers
+.vscode/*
+.tmp_versions/*
+.cache.mk
+user/ioctrl_bench

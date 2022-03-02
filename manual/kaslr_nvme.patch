@@ -1,0 +1,352 @@
+diff --git a/drivers/nvme/host/pci.c b/drivers/nvme/host/pci.c
+index 7fee665ec..8a52702f6 100644
+--- a/drivers/nvme/host/pci.c
++++ b/drivers/nvme/host/pci.c
+@@ -426,7 +426,7 @@ static unsigned int nvme_pci_cmd_size(struct nvme_dev *dev, bool use_sgl)
+ 	return sizeof(struct nvme_iod) + alloc_size;
+ }
+ 
+-static int nvme_admin_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
++SPECIAL_FUNCTION(int, nvme_admin_init_hctx, struct blk_mq_hw_ctx *hctx, void *data,
+ 				unsigned int hctx_idx)
+ {
+ 	struct nvme_dev *dev = data;
+@@ -441,14 +441,14 @@ static int nvme_admin_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+ 	return 0;
+ }
+ 
+-static void nvme_admin_exit_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
++SPECIAL_FUNCTION(void, nvme_admin_exit_hctx, struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
+ {
+ 	struct nvme_queue *nvmeq = hctx->driver_data;
+ 
+ 	nvmeq->tags = NULL;
+ }
+ 
+-static int nvme_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
++SPECIAL_FUNCTION(int, nvme_init_hctx, struct blk_mq_hw_ctx *hctx, void *data,
+ 			  unsigned int hctx_idx)
+ {
+ 	struct nvme_dev *dev = data;
+@@ -462,7 +462,7 @@ static int nvme_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+ 	return 0;
+ }
+ 
+-static int nvme_init_request(struct blk_mq_tag_set *set, struct request *req,
++SPECIAL_FUNCTION(int, nvme_init_request, struct blk_mq_tag_set *set, struct request *req,
+ 		unsigned int hctx_idx, unsigned int numa_node)
+ {
+ 	struct nvme_dev *dev = set->driver_data;
+@@ -486,7 +486,7 @@ static int queue_irq_offset(struct nvme_dev *dev)
+ 	return 0;
+ }
+ 
+-static int nvme_pci_map_queues(struct blk_mq_tag_set *set)
++SPECIAL_FUNCTION(int, nvme_pci_map_queues, struct blk_mq_tag_set *set)
+ {
+ 	struct nvme_dev *dev = set->driver_data;
+ 	int i, qoff, offset;
+@@ -554,7 +554,7 @@ static void nvme_submit_cmd(struct nvme_queue *nvmeq, struct nvme_command *cmd,
+ 	spin_unlock(&nvmeq->sq_lock);
+ }
+ 
+-static void nvme_commit_rqs(struct blk_mq_hw_ctx *hctx)
++SPECIAL_FUNCTION(void, nvme_commit_rqs, struct blk_mq_hw_ctx *hctx)
+ {
+ 	struct nvme_queue *nvmeq = hctx->driver_data;
+ 
+@@ -914,7 +914,7 @@ static void nvme_unmap_data(struct nvme_dev *dev, struct request *req)
+ /*
+  * NOTE: ns is NULL when called on the admin queue.
+  */
+-static blk_status_t nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
++SPECIAL_FUNCTION(blk_status_t, nvme_queue_rq, struct blk_mq_hw_ctx *hctx,
+ 			 const struct blk_mq_queue_data *bd)
+ {
+ 	struct nvme_ns *ns = hctx->queue->queuedata;
+@@ -955,7 +955,7 @@ out_free_cmd:
+ 	return ret;
+ }
+ 
+-static void nvme_pci_complete_rq(struct request *req)
++SPECIAL_FUNCTION(void, nvme_pci_complete_rq, struct request *req)
+ {
+ 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
+ 
+@@ -1046,7 +1046,7 @@ static inline int nvme_process_cq(struct nvme_queue *nvmeq, u16 *start,
+ 	return found;
+ }
+ 
+-static irqreturn_t nvme_irq(int irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, nvme_irq, int irq, void *data)
+ {
+ 	struct nvme_queue *nvmeq = data;
+ 	irqreturn_t ret = IRQ_NONE;
+@@ -1071,7 +1071,7 @@ static irqreturn_t nvme_irq(int irq, void *data)
+ 	return ret;
+ }
+ 
+-static irqreturn_t nvme_irq_check(int irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, nvme_irq_check, int irq, void *data)
+ {
+ 	struct nvme_queue *nvmeq = data;
+ 	if (nvme_cqe_pending(nvmeq))
+@@ -1108,7 +1108,7 @@ static int nvme_poll_irqdisable(struct nvme_queue *nvmeq, unsigned int tag)
+ 	return found;
+ }
+ 
+-static int nvme_poll(struct blk_mq_hw_ctx *hctx)
++SPECIAL_FUNCTION(int, nvme_poll, struct blk_mq_hw_ctx *hctx)
+ {
+ 	struct nvme_queue *nvmeq = hctx->driver_data;
+ 	u16 start, end;
+@@ -1125,7 +1125,7 @@ static int nvme_poll(struct blk_mq_hw_ctx *hctx)
+ 	return found;
+ }
+ 
+-static void nvme_pci_submit_async_event(struct nvme_ctrl *ctrl)
++SPECIAL_FUNCTION(void, nvme_pci_submit_async_event, struct nvme_ctrl *ctrl)
+ {
+ 	struct nvme_dev *dev = to_nvme_dev(ctrl);
+ 	struct nvme_queue *nvmeq = &dev->queues[0];
+@@ -1270,7 +1270,7 @@ static void nvme_warn_reset(struct nvme_dev *dev, u32 csts)
+ 			 csts, result);
+ }
+ 
+-static enum blk_eh_timer_return nvme_timeout(struct request *req, bool reserved)
++SPECIAL_FUNCTION(enum blk_eh_timer_return, nvme_timeout, struct request *req, bool reserved)
+ {
+ 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
+ 	struct nvme_queue *nvmeq = iod->nvmeq;
+@@ -1602,7 +1602,7 @@ release_cq:
+ 	return result;
+ }
+ 
+-static const struct blk_mq_ops nvme_mq_admin_ops = {
++SPECIAL_CONST_VAR(const struct blk_mq_ops nvme_mq_admin_ops) = {
+ 	.queue_rq	= nvme_queue_rq,
+ 	.complete	= nvme_pci_complete_rq,
+ 	.init_hctx	= nvme_admin_init_hctx,
+@@ -1611,7 +1611,7 @@ static const struct blk_mq_ops nvme_mq_admin_ops = {
+ 	.timeout	= nvme_timeout,
+ };
+ 
+-static const struct blk_mq_ops nvme_mq_ops = {
++SPECIAL_CONST_VAR(const struct blk_mq_ops nvme_mq_ops) = {
+ 	.queue_rq	= nvme_queue_rq,
+ 	.complete	= nvme_pci_complete_rq,
+ 	.commit_rqs	= nvme_commit_rqs,
+@@ -1781,7 +1781,7 @@ static int nvme_create_io_queues(struct nvme_dev *dev)
+ 	return ret >= 0 ? 0 : ret;
+ }
+ 
+-static ssize_t nvme_cmb_show(struct device *dev,
++SPECIAL_FUNCTION(ssize_t, nvme_cmb_show, struct device *dev,
+ 			     struct device_attribute *attr,
+ 			     char *buf)
+ {
+@@ -1790,7 +1790,7 @@ static ssize_t nvme_cmb_show(struct device *dev,
+ 	return scnprintf(buf, PAGE_SIZE, "cmbloc : x%08x\ncmbsz  : x%08x\n",
+ 		       ndev->cmbloc, ndev->cmbsz);
+ }
+-static DEVICE_ATTR(cmb, S_IRUGO, nvme_cmb_show, NULL);
++SPECIAL_VAR(struct device_attribute dev_attr_cmb) = __ATTR(cmb, S_IRUGO, nvme_cmb_show, NULL);
+ 
+ static u64 nvme_cmb_size_unit(struct nvme_dev *dev)
+ {
+@@ -2512,7 +2512,7 @@ static void nvme_release_prp_pools(struct nvme_dev *dev)
+ 	dma_pool_destroy(dev->prp_small_pool);
+ }
+ 
+-static void nvme_pci_free_ctrl(struct nvme_ctrl *ctrl)
++SPECIAL_FUNCTION(void, nvme_pci_free_ctrl, struct nvme_ctrl *ctrl)
+ {
+ 	struct nvme_dev *dev = to_nvme_dev(ctrl);
+ 
+@@ -2539,7 +2539,7 @@ static void nvme_remove_dead_ctrl(struct nvme_dev *dev, int status)
+ 		nvme_put_ctrl(&dev->ctrl);
+ }
+ 
+-static void nvme_reset_work(struct work_struct *work)
++SPECIAL_FUNCTION(void, nvme_reset_work, struct work_struct *work)
+ {
+ 	struct nvme_dev *dev =
+ 		container_of(work, struct nvme_dev, ctrl.reset_work);
+@@ -2657,7 +2657,7 @@ static void nvme_reset_work(struct work_struct *work)
+ 	nvme_remove_dead_ctrl(dev, result);
+ }
+ 
+-static void nvme_remove_dead_ctrl_work(struct work_struct *work)
++SPECIAL_FUNCTION(void, nvme_remove_dead_ctrl_work, struct work_struct *work)
+ {
+ 	struct nvme_dev *dev = container_of(work, struct nvme_dev, remove_work);
+ 	struct pci_dev *pdev = to_pci_dev(dev->dev);
+@@ -2667,33 +2667,34 @@ static void nvme_remove_dead_ctrl_work(struct work_struct *work)
+ 	nvme_put_ctrl(&dev->ctrl);
+ }
+ 
+-static int nvme_pci_reg_read32(struct nvme_ctrl *ctrl, u32 off, u32 *val)
++SPECIAL_FUNCTION(int, nvme_pci_reg_read32, struct nvme_ctrl *ctrl, u32 off, u32 *val)
+ {
+ 	*val = readl(to_nvme_dev(ctrl)->bar + off);
+ 	return 0;
+ }
+ 
+-static int nvme_pci_reg_write32(struct nvme_ctrl *ctrl, u32 off, u32 val)
++SPECIAL_FUNCTION(int, nvme_pci_reg_write32, struct nvme_ctrl *ctrl, u32 off, u32 val)
+ {
+ 	writel(val, to_nvme_dev(ctrl)->bar + off);
+ 	return 0;
+ }
+ 
+-static int nvme_pci_reg_read64(struct nvme_ctrl *ctrl, u32 off, u64 *val)
++SPECIAL_FUNCTION(int, nvme_pci_reg_read64, struct nvme_ctrl *ctrl, u32 off, u64 *val)
+ {
+ 	*val = readq(to_nvme_dev(ctrl)->bar + off);
+ 	return 0;
+ }
+ 
+-static int nvme_pci_get_address(struct nvme_ctrl *ctrl, char *buf, int size)
++SPECIAL_FUNCTION(int, nvme_pci_get_address, struct nvme_ctrl *ctrl, char *buf, int size)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(to_nvme_dev(ctrl)->dev);
+ 
+ 	return snprintf(buf, size, "%s", dev_name(&pdev->dev));
+ }
+ 
+-static const struct nvme_ctrl_ops nvme_pci_ctrl_ops = {
+-	.name			= "pcie",
++SPECIAL_VAR(char nvme_pci_name[]) = "pcie";
++SPECIAL_CONST_VAR(const struct nvme_ctrl_ops nvme_pci_ctrl_ops) = {
++	.name			= nvme_pci_name,
+ 	.module			= THIS_MODULE,
+ 	.flags			= NVME_F_METADATA_SUPPORTED |
+ 				  NVME_F_PCI_P2PDMA,
+@@ -2761,7 +2762,7 @@ static void nvme_async_probe(void *data, async_cookie_t cookie)
+ 	nvme_put_ctrl(&dev->ctrl);
+ }
+ 
+-static int nvme_probe(struct pci_dev *pdev, const struct pci_device_id *id)
++SPECIAL_FUNCTION(int, nvme_probe, struct pci_dev *pdev, const struct pci_device_id *id)
+ {
+ 	int node, result = -ENOMEM;
+ 	struct nvme_dev *dev;
+@@ -2841,19 +2842,19 @@ static int nvme_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	return result;
+ }
+ 
+-static void nvme_reset_prepare(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, nvme_reset_prepare, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 	nvme_dev_disable(dev, false);
+ }
+ 
+-static void nvme_reset_done(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, nvme_reset_done, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 	nvme_reset_ctrl_sync(&dev->ctrl);
+ }
+ 
+-static void nvme_shutdown(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, nvme_shutdown, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 	nvme_dev_disable(dev, true);
+@@ -2864,7 +2865,7 @@ static void nvme_shutdown(struct pci_dev *pdev)
+  * state. This function must not have any dependencies on the device state in
+  * order to proceed.
+  */
+-static void nvme_remove(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, nvme_remove, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 
+@@ -2892,7 +2893,7 @@ static void nvme_remove(struct pci_dev *pdev)
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+-static int nvme_suspend(struct device *dev)
++SPECIAL_FUNCTION(int, nvme_suspend, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	struct nvme_dev *ndev = pci_get_drvdata(pdev);
+@@ -2901,7 +2902,7 @@ static int nvme_suspend(struct device *dev)
+ 	return 0;
+ }
+ 
+-static int nvme_resume(struct device *dev)
++SPECIAL_FUNCTION(int, nvme_resume, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	struct nvme_dev *ndev = pci_get_drvdata(pdev);
+@@ -2911,9 +2912,11 @@ static int nvme_resume(struct device *dev)
+ }
+ #endif
+ 
+-static SIMPLE_DEV_PM_OPS(nvme_dev_pm_ops, nvme_suspend, nvme_resume);
++SPECIAL_CONST_VAR(const struct dev_pm_ops nvme_dev_pm_ops) = { \
++	SET_SYSTEM_SLEEP_PM_OPS(nvme_suspend, nvme_resume) \
++};
+ 
+-static pci_ers_result_t nvme_error_detected(struct pci_dev *pdev,
++SPECIAL_FUNCTION(pci_ers_result_t, nvme_error_detected, struct pci_dev *pdev,
+ 						pci_channel_state_t state)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+@@ -2939,7 +2942,7 @@ static pci_ers_result_t nvme_error_detected(struct pci_dev *pdev,
+ 	return PCI_ERS_RESULT_NEED_RESET;
+ }
+ 
+-static pci_ers_result_t nvme_slot_reset(struct pci_dev *pdev)
++SPECIAL_FUNCTION(pci_ers_result_t, nvme_slot_reset, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 
+@@ -2949,14 +2952,14 @@ static pci_ers_result_t nvme_slot_reset(struct pci_dev *pdev)
+ 	return PCI_ERS_RESULT_RECOVERED;
+ }
+ 
+-static void nvme_error_resume(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, nvme_error_resume, struct pci_dev *pdev)
+ {
+ 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+ 
+ 	flush_work(&dev->ctrl.reset_work);
+ }
+ 
+-static const struct pci_error_handlers nvme_err_handler = {
++SPECIAL_CONST_VAR(const struct pci_error_handlers nvme_err_handler) = {
+ 	.error_detected	= nvme_error_detected,
+ 	.slot_reset	= nvme_slot_reset,
+ 	.resume		= nvme_error_resume,
+@@ -2964,7 +2967,7 @@ static const struct pci_error_handlers nvme_err_handler = {
+ 	.reset_done	= nvme_reset_done,
+ };
+ 
+-static const struct pci_device_id nvme_id_table[] = {
++SPECIAL_CONST_VAR(const struct pci_device_id nvme_id_table[]) = {
+ 	{ PCI_VDEVICE(INTEL, 0x0953),
+ 		.driver_data = NVME_QUIRK_STRIPE_SIZE |
+ 				NVME_QUIRK_DEALLOCATE_ZEROES, },
+@@ -3009,8 +3012,9 @@ static const struct pci_device_id nvme_id_table[] = {
+ };
+ MODULE_DEVICE_TABLE(pci, nvme_id_table);
+ 
+-static struct pci_driver nvme_driver = {
+-	.name		= "nvme",
++SPECIAL_VAR(char nvme_driver_name[]) = "nvme";
++SPECIAL_VAR(struct pci_driver nvme_driver) = {
++	.name		= nvme_driver_name,
+ 	.id_table	= nvme_id_table,
+ 	.probe		= nvme_probe,
+ 	.remove		= nvme_remove,
+@@ -3034,6 +3038,7 @@ static void __exit nvme_exit(void)
+ 	_nvme_check_size();
+ }
+ 
++MODULE_INFO(randomizable, "Y");
+ MODULE_AUTHOR("Matthew Wilcox <willy@linux.intel.com>");
+ MODULE_LICENSE("GPL");
+ MODULE_VERSION("1.0");

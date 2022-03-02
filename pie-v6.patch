@@ -1,0 +1,3436 @@
+diff -urN linux-5.0.2/arch/x86/boot/boot.h linux-5.0.2-pie/arch/x86/boot/boot.h
+--- linux-5.0.2/arch/x86/boot/boot.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/boot/boot.h	2019-03-16 10:50:57.097692208 -0400
+@@ -193,7 +193,7 @@
+ }
+ 
+ /* Heap -- available for dynamic lists. */
+-extern char _end[];
++extern char _end[] __default_visibility;
+ extern char *HEAP;
+ extern char *heap_end;
+ #define RESET_HEAP() ((void *)( HEAP = _end ))
+diff -urN linux-5.0.2/arch/x86/boot/compressed/Makefile linux-5.0.2-pie/arch/x86/boot/compressed/Makefile
+--- linux-5.0.2/arch/x86/boot/compressed/Makefile	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/boot/compressed/Makefile	2019-03-16 10:50:57.109692478 -0400
+@@ -121,7 +121,12 @@
+ 
+ targets += $(patsubst $(obj)/%,%,$(vmlinux-objs-y)) vmlinux.bin.all vmlinux.relocs
+ 
++# Large randomization require bigger relocation table
++ifeq ($(CONFIG_RANDOMIZE_BASE_LARGE),y)
++CMD_RELOCS = arch/x86/tools/relocs --large-reloc
++else
+ CMD_RELOCS = arch/x86/tools/relocs
++endif
+ quiet_cmd_relocs = RELOCS  $@
+       cmd_relocs = $(CMD_RELOCS) $< > $@;$(CMD_RELOCS) --abs-relocs $<
+ $(obj)/vmlinux.relocs: vmlinux FORCE
+diff -urN linux-5.0.2/arch/x86/boot/compressed/misc.c linux-5.0.2-pie/arch/x86/boot/compressed/misc.c
+--- linux-5.0.2/arch/x86/boot/compressed/misc.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/boot/compressed/misc.c	2019-03-16 10:50:57.109692478 -0400
+@@ -171,10 +171,18 @@
+ }
+ 
+ #if CONFIG_X86_NEED_RELOCS
++
++/* Large randomization go lower than -2G and use large relocation table */
++#ifdef CONFIG_RANDOMIZE_BASE_LARGE
++typedef long rel_t;
++#else
++typedef int rel_t;
++#endif
++
+ static void handle_relocations(void *output, unsigned long output_len,
+ 			       unsigned long virt_addr)
+ {
+-	int *reloc;
++	rel_t *reloc;
+ 	unsigned long delta, map, ptr;
+ 	unsigned long min_addr = (unsigned long)output;
+ 	unsigned long max_addr = min_addr + (VO___bss_start - VO__text);
+diff -urN linux-5.0.2/arch/x86/crypto/aegis128-aesni-asm.S linux-5.0.2-pie/arch/x86/crypto/aegis128-aesni-asm.S
+--- linux-5.0.2/arch/x86/crypto/aegis128-aesni-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/aegis128-aesni-asm.S	2019-03-16 10:50:57.089692029 -0400
+@@ -203,8 +203,8 @@
+ 	movdqa KEY, STATE4
+ 
+ 	/* load the constants: */
+-	movdqa .Laegis128_const_0, STATE2
+-	movdqa .Laegis128_const_1, STATE1
++	movdqa .Laegis128_const_0(%rip), STATE2
++	movdqa .Laegis128_const_1(%rip), STATE1
+ 	pxor STATE2, STATE3
+ 	pxor STATE1, STATE4
+ 
+@@ -684,7 +684,7 @@
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+-	movdqa .Laegis128_counter, T1
++	movdqa .Laegis128_counter(%rip), T1
+ 	pcmpgtb T1, T0
+ 	pand T0, MSG
+ 
+diff -urN linux-5.0.2/arch/x86/crypto/aegis128l-aesni-asm.S linux-5.0.2-pie/arch/x86/crypto/aegis128l-aesni-asm.S
+--- linux-5.0.2/arch/x86/crypto/aegis128l-aesni-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/aegis128l-aesni-asm.S	2019-03-16 10:50:57.089692029 -0400
+@@ -331,8 +331,8 @@
+ 	pxor MSG0, STATE4
+ 
+ 	/* load the constants: */
+-	movdqa .Laegis128l_const_0, STATE2
+-	movdqa .Laegis128l_const_1, STATE1
++	movdqa .Laegis128l_const_0(%rip), STATE2
++	movdqa .Laegis128l_const_1(%rip), STATE1
+ 	movdqa STATE1, STATE3
+ 	pxor STATE2, STATE5
+ 	pxor STATE1, STATE6
+@@ -765,8 +765,8 @@
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+ 	movdqa T0, T1
+-	movdqa .Laegis128l_counter0, T2
+-	movdqa .Laegis128l_counter1, T3
++	movdqa .Laegis128l_counter0(%rip), T2
++	movdqa .Laegis128l_counter1(%rip), T3
+ 	pcmpgtb T2, T0
+ 	pcmpgtb T3, T1
+ 	pand T0, MSG0
+diff -urN linux-5.0.2/arch/x86/crypto/aegis256-aesni-asm.S linux-5.0.2-pie/arch/x86/crypto/aegis256-aesni-asm.S
+--- linux-5.0.2/arch/x86/crypto/aegis256-aesni-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/aegis256-aesni-asm.S	2019-03-16 10:50:57.089692029 -0400
+@@ -273,8 +273,8 @@
+ 	movdqa T3, STATE1
+ 
+ 	/* load the constants: */
+-	movdqa .Laegis256_const_0, STATE3
+-	movdqa .Laegis256_const_1, STATE2
++	movdqa .Laegis256_const_0(%rip), STATE3
++	movdqa .Laegis256_const_1(%rip), STATE2
+ 	pxor STATE3, STATE4
+ 	pxor STATE2, STATE5
+ 
+@@ -647,7 +647,7 @@
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+-	movdqa .Laegis256_counter, T1
++	movdqa .Laegis256_counter(%rip), T1
+ 	pcmpgtb T1, T0
+ 	pand T0, MSG
+ 
+diff -urN linux-5.0.2/arch/x86/crypto/aesni-intel_asm.S linux-5.0.2-pie/arch/x86/crypto/aesni-intel_asm.S
+--- linux-5.0.2/arch/x86/crypto/aesni-intel_asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/aesni-intel_asm.S	2019-03-16 10:50:57.093692118 -0400
+@@ -2610,7 +2610,7 @@
+  */
+ .align 4
+ _aesni_inc_init:
+-	movaps .Lbswap_mask, BSWAP_MASK
++	movaps .Lbswap_mask(%rip), BSWAP_MASK
+ 	movaps IV, CTR
+ 	PSHUFB_XMM BSWAP_MASK CTR
+ 	mov $1, TCTR_LOW
+@@ -2738,12 +2738,12 @@
+ 	cmpb $0, %cl
+ 	movl $0, %ecx
+ 	movl $240, %r10d
+-	leaq _aesni_enc4, %r11
+-	leaq _aesni_dec4, %rax
++	leaq _aesni_enc4(%rip), %r11
++	leaq _aesni_dec4(%rip), %rax
+ 	cmovel %r10d, %ecx
+ 	cmoveq %rax, %r11
+ 
+-	movdqa .Lgf128mul_x_ble_mask, GF128MUL_MASK
++	movdqa .Lgf128mul_x_ble_mask(%rip), GF128MUL_MASK
+ 	movups (IVP), IV
+ 
+ 	mov 480(KEYP), KLEN
+diff -urN linux-5.0.2/arch/x86/crypto/aes-x86_64-asm_64.S linux-5.0.2-pie/arch/x86/crypto/aes-x86_64-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/aes-x86_64-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/aes-x86_64-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -48,8 +48,12 @@
+ #define R10	%r10
+ #define R11	%r11
+ 
++/* Hold global for PIE support */
++#define RBASE	%r12
++
+ #define prologue(FUNC,KEY,B128,B192,r1,r2,r5,r6,r7,r8,r9,r10,r11) \
+ 	ENTRY(FUNC);			\
++	pushq	RBASE;			\
+ 	movq	r1,r2;			\
+ 	leaq	KEY+48(r8),r9;		\
+ 	movq	r10,r11;		\
+@@ -74,54 +78,63 @@
+ 	movl	r6 ## E,4(r9);		\
+ 	movl	r7 ## E,8(r9);		\
+ 	movl	r8 ## E,12(r9);		\
++	popq	RBASE;			\
+ 	ret;				\
+ 	ENDPROC(FUNC);
+ 
++#define round_mov(tab_off, reg_i, reg_o) \
++	leaq	tab_off(%rip), RBASE; \
++	movl	(RBASE,reg_i,4), reg_o;
++
++#define round_xor(tab_off, reg_i, reg_o) \
++	leaq	tab_off(%rip), RBASE; \
++	xorl	(RBASE,reg_i,4), reg_o;
++
+ #define round(TAB,OFFSET,r1,r2,r3,r4,r5,r6,r7,r8,ra,rb,rc,rd) \
+ 	movzbl	r2 ## H,r5 ## E;	\
+ 	movzbl	r2 ## L,r6 ## E;	\
+-	movl	TAB+1024(,r5,4),r5 ## E;\
++	round_mov(TAB+1024, r5, r5 ## E)\
+ 	movw	r4 ## X,r2 ## X;	\
+-	movl	TAB(,r6,4),r6 ## E;	\
++	round_mov(TAB, r6, r6 ## E)	\
+ 	roll	$16,r2 ## E;		\
+ 	shrl	$16,r4 ## E;		\
+ 	movzbl	r4 ## L,r7 ## E;	\
+ 	movzbl	r4 ## H,r4 ## E;	\
+ 	xorl	OFFSET(r8),ra ## E;	\
+ 	xorl	OFFSET+4(r8),rb ## E;	\
+-	xorl	TAB+3072(,r4,4),r5 ## E;\
+-	xorl	TAB+2048(,r7,4),r6 ## E;\
++	round_xor(TAB+3072, r4, r5 ## E)\
++	round_xor(TAB+2048, r7, r6 ## E)\
+ 	movzbl	r1 ## L,r7 ## E;	\
+ 	movzbl	r1 ## H,r4 ## E;	\
+-	movl	TAB+1024(,r4,4),r4 ## E;\
++	round_mov(TAB+1024, r4, r4 ## E)\
+ 	movw	r3 ## X,r1 ## X;	\
+ 	roll	$16,r1 ## E;		\
+ 	shrl	$16,r3 ## E;		\
+-	xorl	TAB(,r7,4),r5 ## E;	\
++	round_xor(TAB, r7, r5 ## E)	\
+ 	movzbl	r3 ## L,r7 ## E;	\
+ 	movzbl	r3 ## H,r3 ## E;	\
+-	xorl	TAB+3072(,r3,4),r4 ## E;\
+-	xorl	TAB+2048(,r7,4),r5 ## E;\
++	round_xor(TAB+3072, r3, r4 ## E)\
++	round_xor(TAB+2048, r7, r5 ## E)\
+ 	movzbl	r1 ## L,r7 ## E;	\
+ 	movzbl	r1 ## H,r3 ## E;	\
+ 	shrl	$16,r1 ## E;		\
+-	xorl	TAB+3072(,r3,4),r6 ## E;\
+-	movl	TAB+2048(,r7,4),r3 ## E;\
++	round_xor(TAB+3072, r3, r6 ## E)\
++	round_mov(TAB+2048, r7, r3 ## E)\
+ 	movzbl	r1 ## L,r7 ## E;	\
+ 	movzbl	r1 ## H,r1 ## E;	\
+-	xorl	TAB+1024(,r1,4),r6 ## E;\
+-	xorl	TAB(,r7,4),r3 ## E;	\
++	round_xor(TAB+1024, r1, r6 ## E)\
++	round_xor(TAB, r7, r3 ## E)	\
+ 	movzbl	r2 ## H,r1 ## E;	\
+ 	movzbl	r2 ## L,r7 ## E;	\
+ 	shrl	$16,r2 ## E;		\
+-	xorl	TAB+3072(,r1,4),r3 ## E;\
+-	xorl	TAB+2048(,r7,4),r4 ## E;\
++	round_xor(TAB+3072, r1, r3 ## E)\
++	round_xor(TAB+2048, r7, r4 ## E)\
+ 	movzbl	r2 ## H,r1 ## E;	\
+ 	movzbl	r2 ## L,r2 ## E;	\
+ 	xorl	OFFSET+8(r8),rc ## E;	\
+ 	xorl	OFFSET+12(r8),rd ## E;	\
+-	xorl	TAB+1024(,r1,4),r3 ## E;\
+-	xorl	TAB(,r2,4),r4 ## E;
++	round_xor(TAB+1024, r1, r3 ## E)\
++	round_xor(TAB, r2, r4 ## E)
+ 
+ #define move_regs(r1,r2,r3,r4) \
+ 	movl	r3 ## E,r1 ## E;	\
+diff -urN linux-5.0.2/arch/x86/crypto/camellia-aesni-avx2-asm_64.S linux-5.0.2-pie/arch/x86/crypto/camellia-aesni-avx2-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/camellia-aesni-avx2-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/camellia-aesni-avx2-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -70,12 +70,12 @@
+ 	/* \
+ 	 * S-function with AES subbytes \
+ 	 */ \
+-	vbroadcasti128 .Linv_shift_row, t4; \
+-	vpbroadcastd .L0f0f0f0f, t7; \
+-	vbroadcasti128 .Lpre_tf_lo_s1, t5; \
+-	vbroadcasti128 .Lpre_tf_hi_s1, t6; \
+-	vbroadcasti128 .Lpre_tf_lo_s4, t2; \
+-	vbroadcasti128 .Lpre_tf_hi_s4, t3; \
++	vbroadcasti128 .Linv_shift_row(%rip), t4; \
++	vpbroadcastd .L0f0f0f0f(%rip), t7; \
++	vbroadcasti128 .Lpre_tf_lo_s1(%rip), t5; \
++	vbroadcasti128 .Lpre_tf_hi_s1(%rip), t6; \
++	vbroadcasti128 .Lpre_tf_lo_s4(%rip), t2; \
++	vbroadcasti128 .Lpre_tf_hi_s4(%rip), t3; \
+ 	\
+ 	/* AES inverse shift rows */ \
+ 	vpshufb t4, x0, x0; \
+@@ -121,8 +121,8 @@
+ 	vinserti128 $1, t2##_x, x6, x6; \
+ 	vextracti128 $1, x1, t3##_x; \
+ 	vextracti128 $1, x4, t2##_x; \
+-	vbroadcasti128 .Lpost_tf_lo_s1, t0; \
+-	vbroadcasti128 .Lpost_tf_hi_s1, t1; \
++	vbroadcasti128 .Lpost_tf_lo_s1(%rip), t0; \
++	vbroadcasti128 .Lpost_tf_hi_s1(%rip), t1; \
+ 	vaesenclast t4##_x, x2##_x, x2##_x; \
+ 	vaesenclast t4##_x, t6##_x, t6##_x; \
+ 	vinserti128 $1, t6##_x, x2, x2; \
+@@ -137,16 +137,16 @@
+ 	vinserti128 $1, t2##_x, x4, x4; \
+ 	\
+ 	/* postfilter sboxes 1 and 4 */ \
+-	vbroadcasti128 .Lpost_tf_lo_s3, t2; \
+-	vbroadcasti128 .Lpost_tf_hi_s3, t3; \
++	vbroadcasti128 .Lpost_tf_lo_s3(%rip), t2; \
++	vbroadcasti128 .Lpost_tf_hi_s3(%rip), t3; \
+ 	filter_8bit(x0, t0, t1, t7, t6); \
+ 	filter_8bit(x7, t0, t1, t7, t6); \
+ 	filter_8bit(x3, t0, t1, t7, t6); \
+ 	filter_8bit(x6, t0, t1, t7, t6); \
+ 	\
+ 	/* postfilter sbox 3 */ \
+-	vbroadcasti128 .Lpost_tf_lo_s2, t4; \
+-	vbroadcasti128 .Lpost_tf_hi_s2, t5; \
++	vbroadcasti128 .Lpost_tf_lo_s2(%rip), t4; \
++	vbroadcasti128 .Lpost_tf_hi_s2(%rip), t5; \
+ 	filter_8bit(x2, t2, t3, t7, t6); \
+ 	filter_8bit(x5, t2, t3, t7, t6); \
+ 	\
+@@ -483,7 +483,7 @@
+ 	transpose_4x4(c0, c1, c2, c3, a0, a1); \
+ 	transpose_4x4(d0, d1, d2, d3, a0, a1); \
+ 	\
+-	vbroadcasti128 .Lshufb_16x16b, a0; \
++	vbroadcasti128 .Lshufb_16x16b(%rip), a0; \
+ 	vmovdqu st1, a1; \
+ 	vpshufb a0, a2, a2; \
+ 	vpshufb a0, a3, a3; \
+@@ -522,7 +522,7 @@
+ #define inpack32_pre(x0, x1, x2, x3, x4, x5, x6, x7, y0, y1, y2, y3, y4, y5, \
+ 		     y6, y7, rio, key) \
+ 	vpbroadcastq key, x0; \
+-	vpshufb .Lpack_bswap, x0, x0; \
++	vpshufb .Lpack_bswap(%rip), x0, x0; \
+ 	\
+ 	vpxor 0 * 32(rio), x0, y7; \
+ 	vpxor 1 * 32(rio), x0, y6; \
+@@ -573,7 +573,7 @@
+ 	vmovdqu x0, stack_tmp0; \
+ 	\
+ 	vpbroadcastq key, x0; \
+-	vpshufb .Lpack_bswap, x0, x0; \
++	vpshufb .Lpack_bswap(%rip), x0, x0; \
+ 	\
+ 	vpxor x0, y7, y7; \
+ 	vpxor x0, y6, y6; \
+@@ -1113,7 +1113,7 @@
+ 	vmovdqu (%rcx), %xmm0;
+ 	vmovdqa %xmm0, %xmm1;
+ 	inc_le128(%xmm0, %xmm15, %xmm14);
+-	vbroadcasti128 .Lbswap128_mask, %ymm14;
++	vbroadcasti128 .Lbswap128_mask(%rip), %ymm14;
+ 	vinserti128 $1, %xmm0, %ymm1, %ymm0;
+ 	vpshufb %ymm14, %ymm0, %ymm13;
+ 	vmovdqu %ymm13, 15 * 32(%rax);
+@@ -1159,7 +1159,7 @@
+ 
+ 	/* inpack32_pre: */
+ 	vpbroadcastq (key_table)(CTX), %ymm15;
+-	vpshufb .Lpack_bswap, %ymm15, %ymm15;
++	vpshufb .Lpack_bswap(%rip), %ymm15, %ymm15;
+ 	vpxor %ymm0, %ymm15, %ymm0;
+ 	vpxor %ymm1, %ymm15, %ymm1;
+ 	vpxor %ymm2, %ymm15, %ymm2;
+@@ -1243,13 +1243,13 @@
+ 	subq $(16 * 32), %rsp;
+ 	movq %rsp, %rax;
+ 
+-	vbroadcasti128 .Lxts_gf128mul_and_shl1_mask_0, %ymm12;
++	vbroadcasti128 .Lxts_gf128mul_and_shl1_mask_0(%rip), %ymm12;
+ 
+ 	/* load IV and construct second IV */
+ 	vmovdqu (%rcx), %xmm0;
+ 	vmovdqa %xmm0, %xmm15;
+ 	gf128mul_x_ble(%xmm0, %xmm12, %xmm13);
+-	vbroadcasti128 .Lxts_gf128mul_and_shl1_mask_1, %ymm13;
++	vbroadcasti128 .Lxts_gf128mul_and_shl1_mask_1(%rip), %ymm13;
+ 	vinserti128 $1, %xmm0, %ymm15, %ymm0;
+ 	vpxor 0 * 32(%rdx), %ymm0, %ymm15;
+ 	vmovdqu %ymm15, 15 * 32(%rax);
+@@ -1326,7 +1326,7 @@
+ 
+ 	/* inpack32_pre: */
+ 	vpbroadcastq (key_table)(CTX, %r8, 8), %ymm15;
+-	vpshufb .Lpack_bswap, %ymm15, %ymm15;
++	vpshufb .Lpack_bswap(%rip), %ymm15, %ymm15;
+ 	vpxor 0 * 32(%rax), %ymm15, %ymm0;
+ 	vpxor %ymm1, %ymm15, %ymm1;
+ 	vpxor %ymm2, %ymm15, %ymm2;
+@@ -1384,7 +1384,7 @@
+ 
+ 	xorl %r8d, %r8d; /* input whitening key, 0 for enc */
+ 
+-	leaq __camellia_enc_blk32, %r9;
++	leaq __camellia_enc_blk32(%rip), %r9;
+ 
+ 	jmp camellia_xts_crypt_32way;
+ ENDPROC(camellia_xts_enc_32way)
+@@ -1402,7 +1402,7 @@
+ 	movl $24, %eax;
+ 	cmovel %eax, %r8d;  /* input whitening key, last for dec */
+ 
+-	leaq __camellia_dec_blk32, %r9;
++	leaq __camellia_dec_blk32(%rip), %r9;
+ 
+ 	jmp camellia_xts_crypt_32way;
+ ENDPROC(camellia_xts_dec_32way)
+diff -urN linux-5.0.2/arch/x86/crypto/camellia-aesni-avx-asm_64.S linux-5.0.2-pie/arch/x86/crypto/camellia-aesni-avx-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/camellia-aesni-avx-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/camellia-aesni-avx-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -53,10 +53,10 @@
+ 	/* \
+ 	 * S-function with AES subbytes \
+ 	 */ \
+-	vmovdqa .Linv_shift_row, t4; \
+-	vbroadcastss .L0f0f0f0f, t7; \
+-	vmovdqa .Lpre_tf_lo_s1, t0; \
+-	vmovdqa .Lpre_tf_hi_s1, t1; \
++	vmovdqa .Linv_shift_row(%rip), t4; \
++	vbroadcastss .L0f0f0f0f(%rip), t7; \
++	vmovdqa .Lpre_tf_lo_s1(%rip), t0; \
++	vmovdqa .Lpre_tf_hi_s1(%rip), t1; \
+ 	\
+ 	/* AES inverse shift rows */ \
+ 	vpshufb t4, x0, x0; \
+@@ -69,8 +69,8 @@
+ 	vpshufb t4, x6, x6; \
+ 	\
+ 	/* prefilter sboxes 1, 2 and 3 */ \
+-	vmovdqa .Lpre_tf_lo_s4, t2; \
+-	vmovdqa .Lpre_tf_hi_s4, t3; \
++	vmovdqa .Lpre_tf_lo_s4(%rip), t2; \
++	vmovdqa .Lpre_tf_hi_s4(%rip), t3; \
+ 	filter_8bit(x0, t0, t1, t7, t6); \
+ 	filter_8bit(x7, t0, t1, t7, t6); \
+ 	filter_8bit(x1, t0, t1, t7, t6); \
+@@ -84,8 +84,8 @@
+ 	filter_8bit(x6, t2, t3, t7, t6); \
+ 	\
+ 	/* AES subbytes + AES shift rows */ \
+-	vmovdqa .Lpost_tf_lo_s1, t0; \
+-	vmovdqa .Lpost_tf_hi_s1, t1; \
++	vmovdqa .Lpost_tf_lo_s1(%rip), t0; \
++	vmovdqa .Lpost_tf_hi_s1(%rip), t1; \
+ 	vaesenclast t4, x0, x0; \
+ 	vaesenclast t4, x7, x7; \
+ 	vaesenclast t4, x1, x1; \
+@@ -96,16 +96,16 @@
+ 	vaesenclast t4, x6, x6; \
+ 	\
+ 	/* postfilter sboxes 1 and 4 */ \
+-	vmovdqa .Lpost_tf_lo_s3, t2; \
+-	vmovdqa .Lpost_tf_hi_s3, t3; \
++	vmovdqa .Lpost_tf_lo_s3(%rip), t2; \
++	vmovdqa .Lpost_tf_hi_s3(%rip), t3; \
+ 	filter_8bit(x0, t0, t1, t7, t6); \
+ 	filter_8bit(x7, t0, t1, t7, t6); \
+ 	filter_8bit(x3, t0, t1, t7, t6); \
+ 	filter_8bit(x6, t0, t1, t7, t6); \
+ 	\
+ 	/* postfilter sbox 3 */ \
+-	vmovdqa .Lpost_tf_lo_s2, t4; \
+-	vmovdqa .Lpost_tf_hi_s2, t5; \
++	vmovdqa .Lpost_tf_lo_s2(%rip), t4; \
++	vmovdqa .Lpost_tf_hi_s2(%rip), t5; \
+ 	filter_8bit(x2, t2, t3, t7, t6); \
+ 	filter_8bit(x5, t2, t3, t7, t6); \
+ 	\
+@@ -444,7 +444,7 @@
+ 	transpose_4x4(c0, c1, c2, c3, a0, a1); \
+ 	transpose_4x4(d0, d1, d2, d3, a0, a1); \
+ 	\
+-	vmovdqu .Lshufb_16x16b, a0; \
++	vmovdqu .Lshufb_16x16b(%rip), a0; \
+ 	vmovdqu st1, a1; \
+ 	vpshufb a0, a2, a2; \
+ 	vpshufb a0, a3, a3; \
+@@ -483,7 +483,7 @@
+ #define inpack16_pre(x0, x1, x2, x3, x4, x5, x6, x7, y0, y1, y2, y3, y4, y5, \
+ 		     y6, y7, rio, key) \
+ 	vmovq key, x0; \
+-	vpshufb .Lpack_bswap, x0, x0; \
++	vpshufb .Lpack_bswap(%rip), x0, x0; \
+ 	\
+ 	vpxor 0 * 16(rio), x0, y7; \
+ 	vpxor 1 * 16(rio), x0, y6; \
+@@ -534,7 +534,7 @@
+ 	vmovdqu x0, stack_tmp0; \
+ 	\
+ 	vmovq key, x0; \
+-	vpshufb .Lpack_bswap, x0, x0; \
++	vpshufb .Lpack_bswap(%rip), x0, x0; \
+ 	\
+ 	vpxor x0, y7, y7; \
+ 	vpxor x0, y6, y6; \
+@@ -1017,7 +1017,7 @@
+ 	subq $(16 * 16), %rsp;
+ 	movq %rsp, %rax;
+ 
+-	vmovdqa .Lbswap128_mask, %xmm14;
++	vmovdqa .Lbswap128_mask(%rip), %xmm14;
+ 
+ 	/* load IV and byteswap */
+ 	vmovdqu (%rcx), %xmm0;
+@@ -1066,7 +1066,7 @@
+ 
+ 	/* inpack16_pre: */
+ 	vmovq (key_table)(CTX), %xmm15;
+-	vpshufb .Lpack_bswap, %xmm15, %xmm15;
++	vpshufb .Lpack_bswap(%rip), %xmm15, %xmm15;
+ 	vpxor %xmm0, %xmm15, %xmm0;
+ 	vpxor %xmm1, %xmm15, %xmm1;
+ 	vpxor %xmm2, %xmm15, %xmm2;
+@@ -1134,7 +1134,7 @@
+ 	subq $(16 * 16), %rsp;
+ 	movq %rsp, %rax;
+ 
+-	vmovdqa .Lxts_gf128mul_and_shl1_mask, %xmm14;
++	vmovdqa .Lxts_gf128mul_and_shl1_mask(%rip), %xmm14;
+ 
+ 	/* load IV */
+ 	vmovdqu (%rcx), %xmm0;
+@@ -1210,7 +1210,7 @@
+ 
+ 	/* inpack16_pre: */
+ 	vmovq (key_table)(CTX, %r8, 8), %xmm15;
+-	vpshufb .Lpack_bswap, %xmm15, %xmm15;
++	vpshufb .Lpack_bswap(%rip), %xmm15, %xmm15;
+ 	vpxor 0 * 16(%rax), %xmm15, %xmm0;
+ 	vpxor %xmm1, %xmm15, %xmm1;
+ 	vpxor %xmm2, %xmm15, %xmm2;
+@@ -1265,7 +1265,7 @@
+ 	 */
+ 	xorl %r8d, %r8d; /* input whitening key, 0 for enc */
+ 
+-	leaq __camellia_enc_blk16, %r9;
++	leaq __camellia_enc_blk16(%rip), %r9;
+ 
+ 	jmp camellia_xts_crypt_16way;
+ ENDPROC(camellia_xts_enc_16way)
+@@ -1283,7 +1283,7 @@
+ 	movl $24, %eax;
+ 	cmovel %eax, %r8d;  /* input whitening key, last for dec */
+ 
+-	leaq __camellia_dec_blk16, %r9;
++	leaq __camellia_dec_blk16(%rip), %r9;
+ 
+ 	jmp camellia_xts_crypt_16way;
+ ENDPROC(camellia_xts_dec_16way)
+diff -urN linux-5.0.2/arch/x86/crypto/camellia-x86_64-asm_64.S linux-5.0.2-pie/arch/x86/crypto/camellia-x86_64-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/camellia-x86_64-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/camellia-x86_64-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -92,11 +92,13 @@
+ #define RXORbl %r9b
+ 
+ #define xor2ror16(T0, T1, tmp1, tmp2, ab, dst) \
++	leaq T0(%rip), 			tmp1; \
+ 	movzbl ab ## bl,		tmp2 ## d; \
++	xorq (tmp1, tmp2, 8),		dst; \
++	leaq T1(%rip), 			tmp2; \
+ 	movzbl ab ## bh,		tmp1 ## d; \
+-	rorq $16,			ab; \
+-	xorq T0(, tmp2, 8),		dst; \
+-	xorq T1(, tmp1, 8),		dst;
++	xorq (tmp2, tmp1, 8),		dst; \
++	rorq $16,			ab;
+ 
+ /**********************************************************************
+   1-way camellia
+diff -urN linux-5.0.2/arch/x86/crypto/cast5-avx-x86_64-asm_64.S linux-5.0.2-pie/arch/x86/crypto/cast5-avx-x86_64-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/cast5-avx-x86_64-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/cast5-avx-x86_64-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -98,16 +98,20 @@
+ 
+ 
+ #define lookup_32bit(src, dst, op1, op2, op3, interleave_op, il_reg) \
+-	movzbl		src ## bh,     RID1d;    \
+-	movzbl		src ## bl,     RID2d;    \
+-	shrq $16,	src;                     \
+-	movl		s1(, RID1, 4), dst ## d; \
+-	op1		s2(, RID2, 4), dst ## d; \
+-	movzbl		src ## bh,     RID1d;    \
+-	movzbl		src ## bl,     RID2d;    \
+-	interleave_op(il_reg);			 \
+-	op2		s3(, RID1, 4), dst ## d; \
+-	op3		s4(, RID2, 4), dst ## d;
++	movzbl		src ## bh,       RID1d;    \
++	leaq		s1(%rip),        RID2;     \
++	movl		(RID2, RID1, 4), dst ## d; \
++	movzbl		src ## bl,       RID2d;    \
++	leaq		s2(%rip),        RID1;     \
++	op1		(RID1, RID2, 4), dst ## d; \
++	shrq $16,	src;                       \
++	movzbl		src ## bh,     RID1d;      \
++	leaq		s3(%rip),        RID2;     \
++	op2		(RID2, RID1, 4), dst ## d; \
++	movzbl		src ## bl,     RID2d;      \
++	leaq		s4(%rip),        RID1;     \
++	op3		(RID1, RID2, 4), dst ## d; \
++	interleave_op(il_reg);
+ 
+ #define dummy(d) /* do nothing */
+ 
+@@ -166,15 +170,15 @@
+ 	subround(l ## 3, r ## 3, l ## 4, r ## 4, f);
+ 
+ #define enc_preload_rkr() \
+-	vbroadcastss	.L16_mask,                RKR;      \
++	vbroadcastss	.L16_mask(%rip),          RKR;      \
+ 	/* add 16-bit rotation to key rotations (mod 32) */ \
+ 	vpxor		kr(CTX),                  RKR, RKR;
+ 
+ #define dec_preload_rkr() \
+-	vbroadcastss	.L16_mask,                RKR;      \
++	vbroadcastss	.L16_mask(%rip),          RKR;      \
+ 	/* add 16-bit rotation to key rotations (mod 32) */ \
+ 	vpxor		kr(CTX),                  RKR, RKR; \
+-	vpshufb		.Lbswap128_mask,          RKR, RKR;
++	vpshufb		.Lbswap128_mask(%rip),    RKR, RKR;
+ 
+ #define transpose_2x4(x0, x1, t0, t1) \
+ 	vpunpckldq		x1, x0, t0; \
+@@ -251,9 +255,9 @@
+ 
+ 	movq %rdi, CTX;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
+-	vmovd .Lfirst_mask, R1ST;
+-	vmovd .L32_mask, R32;
++	vmovdqa .Lbswap_mask(%rip), RKM;
++	vmovd .Lfirst_mask(%rip), R1ST;
++	vmovd .L32_mask(%rip), R32;
+ 	enc_preload_rkr();
+ 
+ 	inpack_blocks(RL1, RR1, RTMP, RX, RKM);
+@@ -287,7 +291,7 @@
+ 	popq %rbx;
+ 	popq %r15;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
++	vmovdqa .Lbswap_mask(%rip), RKM;
+ 
+ 	outunpack_blocks(RR1, RL1, RTMP, RX, RKM);
+ 	outunpack_blocks(RR2, RL2, RTMP, RX, RKM);
+@@ -325,9 +329,9 @@
+ 
+ 	movq %rdi, CTX;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
+-	vmovd .Lfirst_mask, R1ST;
+-	vmovd .L32_mask, R32;
++	vmovdqa .Lbswap_mask(%rip), RKM;
++	vmovd .Lfirst_mask(%rip), R1ST;
++	vmovd .L32_mask(%rip), R32;
+ 	dec_preload_rkr();
+ 
+ 	inpack_blocks(RL1, RR1, RTMP, RX, RKM);
+@@ -358,7 +362,7 @@
+ 	round(RL, RR, 1, 2);
+ 	round(RR, RL, 0, 1);
+ 
+-	vmovdqa .Lbswap_mask, RKM;
++	vmovdqa .Lbswap_mask(%rip), RKM;
+ 	popq %rbx;
+ 	popq %r15;
+ 
+@@ -521,8 +525,8 @@
+ 
+ 	vpcmpeqd RKR, RKR, RKR;
+ 	vpaddq RKR, RKR, RKR; /* low: -2, high: -2 */
+-	vmovdqa .Lbswap_iv_mask, R1ST;
+-	vmovdqa .Lbswap128_mask, RKM;
++	vmovdqa .Lbswap_iv_mask(%rip), R1ST;
++	vmovdqa .Lbswap128_mask(%rip), RKM;
+ 
+ 	/* load IV and byteswap */
+ 	vmovq (%rcx), RX;
+diff -urN linux-5.0.2/arch/x86/crypto/cast6-avx-x86_64-asm_64.S linux-5.0.2-pie/arch/x86/crypto/cast6-avx-x86_64-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/cast6-avx-x86_64-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/cast6-avx-x86_64-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -98,16 +98,20 @@
+ 
+ 
+ #define lookup_32bit(src, dst, op1, op2, op3, interleave_op, il_reg) \
+-	movzbl		src ## bh,     RID1d;    \
+-	movzbl		src ## bl,     RID2d;    \
+-	shrq $16,	src;                     \
+-	movl		s1(, RID1, 4), dst ## d; \
+-	op1		s2(, RID2, 4), dst ## d; \
+-	movzbl		src ## bh,     RID1d;    \
+-	movzbl		src ## bl,     RID2d;    \
+-	interleave_op(il_reg);			 \
+-	op2		s3(, RID1, 4), dst ## d; \
+-	op3		s4(, RID2, 4), dst ## d;
++	movzbl		src ## bh,       RID1d;    \
++	leaq		s1(%rip),        RID2;     \
++	movl		(RID2, RID1, 4), dst ## d; \
++	movzbl		src ## bl,       RID2d;    \
++	leaq		s2(%rip),        RID1;     \
++	op1		(RID1, RID2, 4), dst ## d; \
++	shrq $16,	src;                       \
++	movzbl		src ## bh,     RID1d;      \
++	leaq		s3(%rip),        RID2;     \
++	op2		(RID2, RID1, 4), dst ## d; \
++	movzbl		src ## bl,     RID2d;      \
++	leaq		s4(%rip),        RID1;     \
++	op3		(RID1, RID2, 4), dst ## d; \
++	interleave_op(il_reg);
+ 
+ #define dummy(d) /* do nothing */
+ 
+@@ -190,10 +194,10 @@
+ 	qop(RD, RC, 1);
+ 
+ #define shuffle(mask) \
+-	vpshufb		mask,            RKR, RKR;
++	vpshufb		mask(%rip),            RKR, RKR;
+ 
+ #define preload_rkr(n, do_mask, mask) \
+-	vbroadcastss	.L16_mask,                RKR;      \
++	vbroadcastss	.L16_mask(%rip),          RKR;      \
+ 	/* add 16-bit rotation to key rotations (mod 32) */ \
+ 	vpxor		(kr+n*16)(CTX),           RKR, RKR; \
+ 	do_mask(mask);
+@@ -275,9 +279,9 @@
+ 
+ 	movq %rdi, CTX;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
+-	vmovd .Lfirst_mask, R1ST;
+-	vmovd .L32_mask, R32;
++	vmovdqa .Lbswap_mask(%rip), RKM;
++	vmovd .Lfirst_mask(%rip), R1ST;
++	vmovd .L32_mask(%rip), R32;
+ 
+ 	inpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	inpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+@@ -301,7 +305,7 @@
+ 	popq %rbx;
+ 	popq %r15;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
++	vmovdqa .Lbswap_mask(%rip), RKM;
+ 
+ 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+@@ -323,9 +327,9 @@
+ 
+ 	movq %rdi, CTX;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
+-	vmovd .Lfirst_mask, R1ST;
+-	vmovd .L32_mask, R32;
++	vmovdqa .Lbswap_mask(%rip), RKM;
++	vmovd .Lfirst_mask(%rip), R1ST;
++	vmovd .L32_mask(%rip), R32;
+ 
+ 	inpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	inpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+@@ -349,7 +353,7 @@
+ 	popq %rbx;
+ 	popq %r15;
+ 
+-	vmovdqa .Lbswap_mask, RKM;
++	vmovdqa .Lbswap_mask(%rip), RKM;
+ 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+ 
+diff -urN linux-5.0.2/arch/x86/crypto/des3_ede-asm_64.S linux-5.0.2-pie/arch/x86/crypto/des3_ede-asm_64.S
+--- linux-5.0.2/arch/x86/crypto/des3_ede-asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/des3_ede-asm_64.S	2019-03-16 10:50:57.093692118 -0400
+@@ -138,21 +138,29 @@
+ 	movzbl RW0bl, RT2d; \
+ 	movzbl RW0bh, RT3d; \
+ 	shrq $16, RW0; \
+-	movq s8(, RT0, 8), RT0; \
+-	xorq s6(, RT1, 8), to; \
++	leaq s8(%rip), RW1; \
++	movq (RW1, RT0, 8), RT0; \
++	leaq s6(%rip), RW1; \
++	xorq (RW1, RT1, 8), to; \
+ 	movzbl RW0bl, RL1d; \
+ 	movzbl RW0bh, RT1d; \
+ 	shrl $16, RW0d; \
+-	xorq s4(, RT2, 8), RT0; \
+-	xorq s2(, RT3, 8), to; \
++	leaq s4(%rip), RW1; \
++	xorq (RW1, RT2, 8), RT0; \
++	leaq s2(%rip), RW1; \
++	xorq (RW1, RT3, 8), to; \
+ 	movzbl RW0bl, RT2d; \
+ 	movzbl RW0bh, RT3d; \
+-	xorq s7(, RL1, 8), RT0; \
+-	xorq s5(, RT1, 8), to; \
+-	xorq s3(, RT2, 8), RT0; \
++	leaq s7(%rip), RW1; \
++	xorq (RW1, RL1, 8), RT0; \
++	leaq s5(%rip), RW1; \
++	xorq (RW1, RT1, 8), to; \
++	leaq s3(%rip), RW1; \
++	xorq (RW1, RT2, 8), RT0; \
+ 	load_next_key(n, RW0); \
+ 	xorq RT0, to; \
+-	xorq s1(, RT3, 8), to; \
++	leaq s1(%rip), RW1; \
++	xorq (RW1, RT3, 8), to; \
+ 
+ #define load_next_key(n, RWx) \
+ 	movq (((n) + 1) * 8)(CTX), RWx;
+@@ -364,65 +372,89 @@
+ 	movzbl RW0bl, RT3d; \
+ 	movzbl RW0bh, RT1d; \
+ 	shrq $16, RW0; \
+-	xorq s8(, RT3, 8), to##0; \
+-	xorq s6(, RT1, 8), to##0; \
++	leaq s8(%rip), RT2; \
++	xorq (RT2, RT3, 8), to##0; \
++	leaq s6(%rip), RT2; \
++	xorq (RT2, RT1, 8), to##0; \
+ 	movzbl RW0bl, RT3d; \
+ 	movzbl RW0bh, RT1d; \
+ 	shrq $16, RW0; \
+-	xorq s4(, RT3, 8), to##0; \
+-	xorq s2(, RT1, 8), to##0; \
++	leaq s4(%rip), RT2; \
++	xorq (RT2, RT3, 8), to##0; \
++	leaq s2(%rip), RT2; \
++	xorq (RT2, RT1, 8), to##0; \
+ 	movzbl RW0bl, RT3d; \
+ 	movzbl RW0bh, RT1d; \
+ 	shrl $16, RW0d; \
+-	xorq s7(, RT3, 8), to##0; \
+-	xorq s5(, RT1, 8), to##0; \
++	leaq s7(%rip), RT2; \
++	xorq (RT2, RT3, 8), to##0; \
++	leaq s5(%rip), RT2; \
++	xorq (RT2, RT1, 8), to##0; \
+ 	movzbl RW0bl, RT3d; \
+ 	movzbl RW0bh, RT1d; \
+ 	load_next_key(n, RW0); \
+-	xorq s3(, RT3, 8), to##0; \
+-	xorq s1(, RT1, 8), to##0; \
++	leaq s3(%rip), RT2; \
++	xorq (RT2, RT3, 8), to##0; \
++	leaq s1(%rip), RT2; \
++	xorq (RT2, RT1, 8), to##0; \
+ 		xorq from##1, RW1; \
+ 		movzbl RW1bl, RT3d; \
+ 		movzbl RW1bh, RT1d; \
+ 		shrq $16, RW1; \
+-		xorq s8(, RT3, 8), to##1; \
+-		xorq s6(, RT1, 8), to##1; \
++		leaq s8(%rip), RT2; \
++		xorq (RT2, RT3, 8), to##1; \
++		leaq s6(%rip), RT2; \
++		xorq (RT2, RT1, 8), to##1; \
+ 		movzbl RW1bl, RT3d; \
+ 		movzbl RW1bh, RT1d; \
+ 		shrq $16, RW1; \
+-		xorq s4(, RT3, 8), to##1; \
+-		xorq s2(, RT1, 8), to##1; \
++		leaq s4(%rip), RT2; \
++		xorq (RT2, RT3, 8), to##1; \
++		leaq s2(%rip), RT2; \
++		xorq (RT2, RT1, 8), to##1; \
+ 		movzbl RW1bl, RT3d; \
+ 		movzbl RW1bh, RT1d; \
+ 		shrl $16, RW1d; \
+-		xorq s7(, RT3, 8), to##1; \
+-		xorq s5(, RT1, 8), to##1; \
++		leaq s7(%rip), RT2; \
++		xorq (RT2, RT3, 8), to##1; \
++		leaq s5(%rip), RT2; \
++		xorq (RT2, RT1, 8), to##1; \
+ 		movzbl RW1bl, RT3d; \
+ 		movzbl RW1bh, RT1d; \
+ 		do_movq(RW0, RW1); \
+-		xorq s3(, RT3, 8), to##1; \
+-		xorq s1(, RT1, 8), to##1; \
++		leaq s3(%rip), RT2; \
++		xorq (RT2, RT3, 8), to##1; \
++		leaq s1(%rip), RT2; \
++		xorq (RT2, RT1, 8), to##1; \
+ 			xorq from##2, RW2; \
+ 			movzbl RW2bl, RT3d; \
+ 			movzbl RW2bh, RT1d; \
+ 			shrq $16, RW2; \
+-			xorq s8(, RT3, 8), to##2; \
+-			xorq s6(, RT1, 8), to##2; \
++			leaq s8(%rip), RT2; \
++			xorq (RT2, RT3, 8), to##2; \
++			leaq s6(%rip), RT2; \
++			xorq (RT2, RT1, 8), to##2; \
+ 			movzbl RW2bl, RT3d; \
+ 			movzbl RW2bh, RT1d; \
+ 			shrq $16, RW2; \
+-			xorq s4(, RT3, 8), to##2; \
+-			xorq s2(, RT1, 8), to##2; \
++			leaq s4(%rip), RT2; \
++			xorq (RT2, RT3, 8), to##2; \
++			leaq s2(%rip), RT2; \
++			xorq (RT2, RT1, 8), to##2; \
+ 			movzbl RW2bl, RT3d; \
+ 			movzbl RW2bh, RT1d; \
+ 			shrl $16, RW2d; \
+-			xorq s7(, RT3, 8), to##2; \
+-			xorq s5(, RT1, 8), to##2; \
++			leaq s7(%rip), RT2; \
++			xorq (RT2, RT3, 8), to##2; \
++			leaq s5(%rip), RT2; \
++			xorq (RT2, RT1, 8), to##2; \
+ 			movzbl RW2bl, RT3d; \
+ 			movzbl RW2bh, RT1d; \
+ 			do_movq(RW0, RW2); \
+-			xorq s3(, RT3, 8), to##2; \
+-			xorq s1(, RT1, 8), to##2;
++			leaq s3(%rip), RT2; \
++			xorq (RT2, RT3, 8), to##2; \
++			leaq s1(%rip), RT2; \
++			xorq (RT2, RT1, 8), to##2;
+ 
+ #define __movq(src, dst) \
+ 	movq src, dst;
+diff -urN linux-5.0.2/arch/x86/crypto/ghash-clmulni-intel_asm.S linux-5.0.2-pie/arch/x86/crypto/ghash-clmulni-intel_asm.S
+--- linux-5.0.2/arch/x86/crypto/ghash-clmulni-intel_asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/ghash-clmulni-intel_asm.S	2019-03-16 10:50:57.093692118 -0400
+@@ -97,7 +97,7 @@
+ 	FRAME_BEGIN
+ 	movups (%rdi), DATA
+ 	movups (%rsi), SHASH
+-	movaps .Lbswap_mask, BSWAP
++	movaps .Lbswap_mask(%rip), BSWAP
+ 	PSHUFB_XMM BSWAP DATA
+ 	call __clmul_gf128mul_ble
+ 	PSHUFB_XMM BSWAP DATA
+@@ -114,7 +114,7 @@
+ 	FRAME_BEGIN
+ 	cmp $16, %rdx
+ 	jb .Lupdate_just_ret	# check length
+-	movaps .Lbswap_mask, BSWAP
++	movaps .Lbswap_mask(%rip), BSWAP
+ 	movups (%rdi), DATA
+ 	movups (%rcx), SHASH
+ 	PSHUFB_XMM BSWAP DATA
+diff -urN linux-5.0.2/arch/x86/crypto/glue_helper-asm-avx2.S linux-5.0.2-pie/arch/x86/crypto/glue_helper-asm-avx2.S
+--- linux-5.0.2/arch/x86/crypto/glue_helper-asm-avx2.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/glue_helper-asm-avx2.S	2019-03-16 10:50:57.093692118 -0400
+@@ -67,7 +67,7 @@
+ 	vmovdqu (iv), t2x; \
+ 	vmovdqa t2x, t3x; \
+ 	inc_le128(t2x, t0x, t1x); \
+-	vbroadcasti128 bswap, t1; \
++	vbroadcasti128 bswap(%rip), t1; \
+ 	vinserti128 $1, t2x, t3, t2; /* ab: le0 ; cd: le1 */ \
+ 	vpshufb t1, t2, x0; \
+ 	\
+@@ -124,13 +124,13 @@
+ 		       tivx, t0, t0x, t1, t1x, t2, t2x, t3, \
+ 		       xts_gf128mul_and_shl1_mask_0, \
+ 		       xts_gf128mul_and_shl1_mask_1) \
+-	vbroadcasti128 xts_gf128mul_and_shl1_mask_0, t1; \
++	vbroadcasti128 xts_gf128mul_and_shl1_mask_0(%rip), t1; \
+ 	\
+ 	/* load IV and construct second IV */ \
+ 	vmovdqu (iv), tivx; \
+ 	vmovdqa tivx, t0x; \
+ 	gf128mul_x_ble(tivx, t1x, t2x); \
+-	vbroadcasti128 xts_gf128mul_and_shl1_mask_1, t2; \
++	vbroadcasti128 xts_gf128mul_and_shl1_mask_1(%rip), t2; \
+ 	vinserti128 $1, tivx, t0, tiv; \
+ 	vpxor (0*32)(src), tiv, x0; \
+ 	vmovdqu tiv, (0*32)(dst); \
+diff -urN linux-5.0.2/arch/x86/crypto/glue_helper-asm-avx.S linux-5.0.2-pie/arch/x86/crypto/glue_helper-asm-avx.S
+--- linux-5.0.2/arch/x86/crypto/glue_helper-asm-avx.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/glue_helper-asm-avx.S	2019-03-16 10:50:57.093692118 -0400
+@@ -54,7 +54,7 @@
+ #define load_ctr_8way(iv, bswap, x0, x1, x2, x3, x4, x5, x6, x7, t0, t1, t2) \
+ 	vpcmpeqd t0, t0, t0; \
+ 	vpsrldq $8, t0, t0; /* low: -1, high: 0 */ \
+-	vmovdqa bswap, t1; \
++	vmovdqa bswap(%rip), t1; \
+ 	\
+ 	/* load IV and byteswap */ \
+ 	vmovdqu (iv), x7; \
+@@ -99,7 +99,7 @@
+ 
+ #define load_xts_8way(iv, src, dst, x0, x1, x2, x3, x4, x5, x6, x7, tiv, t0, \
+ 		      t1, xts_gf128mul_and_shl1_mask) \
+-	vmovdqa xts_gf128mul_and_shl1_mask, t0; \
++	vmovdqa xts_gf128mul_and_shl1_mask(%rip), t0; \
+ 	\
+ 	/* load IV */ \
+ 	vmovdqu (iv), tiv; \
+diff -urN linux-5.0.2/arch/x86/crypto/morus1280-avx2-asm.S linux-5.0.2-pie/arch/x86/crypto/morus1280-avx2-asm.S
+--- linux-5.0.2/arch/x86/crypto/morus1280-avx2-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/morus1280-avx2-asm.S	2019-03-16 10:50:57.093692118 -0400
+@@ -258,7 +258,7 @@
+ 	/* load all zeros: */
+ 	vpxor STATE3, STATE3, STATE3
+ 	/* load the constant: */
+-	vmovdqa .Lmorus1280_const, STATE4
++	vmovdqa .Lmorus1280_const(%rip), STATE4
+ 
+ 	/* update 16 times with zero: */
+ 	call __morus1280_update_zero
+@@ -555,7 +555,7 @@
+ 	/* mask with byte count: */
+ 	movq %rcx, T0_LOW
+ 	vpbroadcastb T0_LOW, T0
+-	vmovdqa .Lmorus1280_counter, T1
++	vmovdqa .Lmorus1280_counter(%rip), T1
+ 	vpcmpgtb T1, T0, T0
+ 	vpand T0, MSG, MSG
+ 
+diff -urN linux-5.0.2/arch/x86/crypto/morus1280-sse2-asm.S linux-5.0.2-pie/arch/x86/crypto/morus1280-sse2-asm.S
+--- linux-5.0.2/arch/x86/crypto/morus1280-sse2-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/morus1280-sse2-asm.S	2019-03-16 10:50:57.097692208 -0400
+@@ -387,8 +387,8 @@
+ 	pxor STATE3_LO, STATE3_LO
+ 	pxor STATE3_HI, STATE3_HI
+ 	/* load the constant: */
+-	movdqa .Lmorus640_const_0, STATE4_LO
+-	movdqa .Lmorus640_const_1, STATE4_HI
++	movdqa .Lmorus640_const_0(%rip), STATE4_LO
++	movdqa .Lmorus640_const_1(%rip), STATE4_HI
+ 
+ 	/* update 16 times with zero: */
+ 	call __morus1280_update_zero
+@@ -802,8 +802,8 @@
+ 	punpcklbw T0_LO, T0_LO
+ 	punpcklbw T0_LO, T0_LO
+ 	movdqa T0_LO, T0_HI
+-	movdqa .Lmorus640_counter_0, T1_LO
+-	movdqa .Lmorus640_counter_1, T1_HI
++	movdqa .Lmorus640_counter_0(%rip), T1_LO
++	movdqa .Lmorus640_counter_1(%rip), T1_HI
+ 	pcmpgtb T1_LO, T0_LO
+ 	pcmpgtb T1_HI, T0_HI
+ 	pand T0_LO, MSG_LO
+diff -urN linux-5.0.2/arch/x86/crypto/morus640-sse2-asm.S linux-5.0.2-pie/arch/x86/crypto/morus640-sse2-asm.S
+--- linux-5.0.2/arch/x86/crypto/morus640-sse2-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/morus640-sse2-asm.S	2019-03-16 10:50:57.097692208 -0400
+@@ -238,8 +238,8 @@
+ 	/* load all ones: */
+ 	pcmpeqd STATE2, STATE2
+ 	/* load the constants: */
+-	movdqa .Lmorus640_const_0, STATE3
+-	movdqa .Lmorus640_const_1, STATE4
++	movdqa .Lmorus640_const_0(%rip), STATE3
++	movdqa .Lmorus640_const_1(%rip), STATE4
+ 
+ 	/* update 16 times with zero: */
+ 	call __morus640_update_zero
+@@ -545,7 +545,7 @@
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+ 	punpcklbw T0, T0
+-	movdqa .Lmorus640_counter, T1
++	movdqa .Lmorus640_counter(%rip), T1
+ 	pcmpgtb T1, T0
+ 	pand T0, MSG
+ 
+diff -urN linux-5.0.2/arch/x86/crypto/sha256-avx2-asm.S linux-5.0.2-pie/arch/x86/crypto/sha256-avx2-asm.S
+--- linux-5.0.2/arch/x86/crypto/sha256-avx2-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/crypto/sha256-avx2-asm.S	2019-03-16 10:50:57.097692208 -0400
+@@ -588,37 +588,42 @@
+ 	mov	INP, _INP(%rsp)
+ 
+ 	## schedule 48 input dwords, by doing 3 rounds of 12 each
+-	xor	SRND, SRND
++	leaq	K256(%rip), SRND
++	## loop1 upper bound
++	leaq	K256+3*4*32(%rip), INP
+ 
+ .align 16
+ loop1:
+-	vpaddd	K256+0*32(SRND), X0, XFER
++	vpaddd	0*32(SRND), X0, XFER
+ 	vmovdqa XFER, 0*32+_XFER(%rsp, SRND)
+ 	FOUR_ROUNDS_AND_SCHED	_XFER + 0*32
+ 
+-	vpaddd	K256+1*32(SRND), X0, XFER
++	vpaddd	1*32(SRND), X0, XFER
+ 	vmovdqa XFER, 1*32+_XFER(%rsp, SRND)
+ 	FOUR_ROUNDS_AND_SCHED	_XFER + 1*32
+ 
+-	vpaddd	K256+2*32(SRND), X0, XFER
++	vpaddd	2*32(SRND), X0, XFER
+ 	vmovdqa XFER, 2*32+_XFER(%rsp, SRND)
+ 	FOUR_ROUNDS_AND_SCHED	_XFER + 2*32
+ 
+-	vpaddd	K256+3*32(SRND), X0, XFER
++	vpaddd	3*32(SRND), X0, XFER
+ 	vmovdqa XFER, 3*32+_XFER(%rsp, SRND)
+ 	FOUR_ROUNDS_AND_SCHED	_XFER + 3*32
+ 
+ 	add	$4*32, SRND
+-	cmp	$3*4*32, SRND
++	cmp	INP, SRND
+ 	jb	loop1
+ 
++	## loop2 upper bound
++	leaq	K256+4*4*32(%rip), INP
++
+ loop2:
+ 	## Do last 16 rounds with no scheduling
+-	vpaddd	K256+0*32(SRND), X0, XFER
++	vpaddd	0*32(SRND), X0, XFER
+ 	vmovdqa XFER, 0*32+_XFER(%rsp, SRND)
+ 	DO_4ROUNDS	_XFER + 0*32
+ 
+-	vpaddd	K256+1*32(SRND), X1, XFER
++	vpaddd	1*32(SRND), X1, XFER
+ 	vmovdqa XFER, 1*32+_XFER(%rsp, SRND)
+ 	DO_4ROUNDS	_XFER + 1*32
+ 	add	$2*32, SRND
+@@ -626,7 +631,7 @@
+ 	vmovdqa	X2, X0
+ 	vmovdqa	X3, X1
+ 
+-	cmp	$4*4*32, SRND
++	cmp	INP, SRND
+ 	jb	loop2
+ 
+ 	mov	_CTX(%rsp), CTX
+diff -urN linux-5.0.2/arch/x86/entry/calling.h linux-5.0.2-pie/arch/x86/entry/calling.h
+--- linux-5.0.2/arch/x86/entry/calling.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/entry/calling.h	2019-03-16 10:50:57.097692208 -0400
+@@ -218,7 +218,7 @@
+ .endm
+ 
+ #define THIS_CPU_user_pcid_flush_mask   \
+-	PER_CPU_VAR(cpu_tlbstate) + TLB_STATE_user_pcid_flush_mask
++	PER_CPU_VAR(cpu_tlbstate + TLB_STATE_user_pcid_flush_mask)
+ 
+ .macro SWITCH_TO_USER_CR3_NOSTACK scratch_reg:req scratch_reg2:req
+ 	ALTERNATIVE "jmp .Lend_\@", "", X86_FEATURE_PTI
+diff -urN linux-5.0.2/arch/x86/entry/entry_32.S linux-5.0.2-pie/arch/x86/entry/entry_32.S
+--- linux-5.0.2/arch/x86/entry/entry_32.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/entry/entry_32.S	2019-03-16 10:50:57.105692388 -0400
+@@ -655,7 +655,8 @@
+ 	movl	%esp, TASK_threadsp(%eax)
+ 	movl	TASK_threadsp(%edx), %esp
+ 
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	movl	TASK_stack_canary(%edx), %ebx
+ 	movl	%ebx, PER_CPU_VAR(stack_canary)+stack_canary_offset
+ #endif
+diff -urN linux-5.0.2/arch/x86/entry/entry_64.S linux-5.0.2-pie/arch/x86/entry/entry_64.S
+--- linux-5.0.2/arch/x86/entry/entry_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/entry/entry_64.S	2019-03-16 10:50:57.105692388 -0400
+@@ -296,9 +296,10 @@
+ 	movq	%rsp, TASK_threadsp(%rdi)
+ 	movq	TASK_threadsp(%rsi), %rsp
+ 
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	movq	TASK_stack_canary(%rsi), %rbx
+-	movq	%rbx, PER_CPU_VAR(irq_stack_union)+stack_canary_offset
++	movq	%rbx, PER_CPU_VAR(irq_stack_union + stack_canary_offset)
+ #endif
+ 
+ #ifdef CONFIG_RETPOLINE
+@@ -841,7 +842,7 @@
+ /*
+  * Exception entry points.
+  */
+-#define CPU_TSS_IST(x) PER_CPU_VAR(cpu_tss_rw) + (TSS_ist + ((x) - 1) * 8)
++#define CPU_TSS_IST(x) PER_CPU_VAR(cpu_tss_rw + (TSS_ist + ((x) - 1) * 8))
+ 
+ /**
+  * idtentry - Generate an IDT entry stub
+@@ -1269,7 +1270,8 @@
+ 	movl	%ecx, %eax			/* zero extend */
+ 	cmpq	%rax, RIP+8(%rsp)
+ 	je	.Lbstep_iret
+-	cmpq	$.Lgs_change, RIP+8(%rsp)
++	leaq	.Lgs_change(%rip), %rcx
++	cmpq	%rcx, RIP+8(%rsp)
+ 	jne	.Lerror_entry_done
+ 
+ 	/*
+@@ -1466,10 +1468,10 @@
+ 	 * resume the outer NMI.
+ 	 */
+ 
+-	movq	$repeat_nmi, %rdx
++	leaq	repeat_nmi(%rip), %rdx
+ 	cmpq	8(%rsp), %rdx
+ 	ja	1f
+-	movq	$end_repeat_nmi, %rdx
++	leaq	end_repeat_nmi(%rip), %rdx
+ 	cmpq	8(%rsp), %rdx
+ 	ja	nested_nmi_out
+ 1:
+@@ -1523,7 +1525,8 @@
+ 	pushq	%rdx
+ 	pushfq
+ 	pushq	$__KERNEL_CS
+-	pushq	$repeat_nmi
++	leaq	repeat_nmi(%rip), %rdx
++	pushq	%rdx
+ 
+ 	/* Put stack back */
+ 	addq	$(6*8), %rsp
+@@ -1562,7 +1565,11 @@
+ 	addq	$8, (%rsp)	/* Fix up RSP */
+ 	pushfq			/* RFLAGS */
+ 	pushq	$__KERNEL_CS	/* CS */
+-	pushq	$1f		/* RIP */
++	pushq	$0		/* Futur return address */
++	pushq	%rax		/* Save RAX */
++	leaq	1f(%rip), %rax	/* RIP */
++	movq    %rax, 8(%rsp)   /* Put 1f on return address */
++	popq	%rax		/* Restore RAX */
+ 	iretq			/* continues at repeat_nmi below */
+ 	UNWIND_HINT_IRET_REGS
+ 1:
+diff -urN linux-5.0.2/arch/x86/include/asm/alternative.h linux-5.0.2-pie/arch/x86/include/asm/alternative.h
+--- linux-5.0.2/arch/x86/include/asm/alternative.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/alternative.h	2019-03-16 10:50:57.097692208 -0400
+@@ -208,7 +208,7 @@
+ /* Like alternative_io, but for replacing a direct call with another one. */
+ #define alternative_call(oldfunc, newfunc, feature, output, input...)	\
+ 	asm volatile (ALTERNATIVE("call %P[old]", "call %P[new]", feature) \
+-		: output : [old] "i" (oldfunc), [new] "i" (newfunc), ## input)
++		: output : [old] "X" (oldfunc), [new] "X" (newfunc), ## input)
+ 
+ /*
+  * Like alternative_call, but there are two features and respective functions.
+@@ -221,8 +221,8 @@
+ 	asm volatile (ALTERNATIVE_2("call %P[old]", "call %P[new1]", feature1,\
+ 		"call %P[new2]", feature2)				      \
+ 		: output, ASM_CALL_CONSTRAINT				      \
+-		: [old] "i" (oldfunc), [new1] "i" (newfunc1),		      \
+-		  [new2] "i" (newfunc2), ## input)
++		: [old] "X" (oldfunc), [new1] "X" (newfunc1),		      \
++		  [new2] "X" (newfunc2), ## input)
+ 
+ /*
+  * use this macro(s) if you need more than one output parameter
+diff -urN linux-5.0.2/arch/x86/include/asm/asm.h linux-5.0.2-pie/arch/x86/include/asm/asm.h
+--- linux-5.0.2/arch/x86/include/asm/asm.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/asm.h	2019-03-16 10:50:57.097692208 -0400
+@@ -30,6 +30,7 @@
+ #define _ASM_ALIGN	__ASM_SEL(.balign 4, .balign 8)
+ 
+ #define _ASM_MOV	__ASM_SIZE(mov)
++#define _ASM_MOVABS	__ASM_SEL(movl, movabsq)
+ #define _ASM_INC	__ASM_SIZE(inc)
+ #define _ASM_DEC	__ASM_SIZE(dec)
+ #define _ASM_ADD	__ASM_SIZE(add)
+diff -urN linux-5.0.2/arch/x86/include/asm/jump_label.h linux-5.0.2-pie/arch/x86/include/asm/jump_label.h
+--- linux-5.0.2/arch/x86/include/asm/jump_label.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/jump_label.h	2019-03-16 10:50:57.097692208 -0400
+@@ -25,9 +25,9 @@
+ 		".pushsection __jump_table,  \"aw\" \n\t"
+ 		_ASM_ALIGN "\n\t"
+ 		".long 1b - ., %l[l_yes] - . \n\t"
+-		_ASM_PTR "%c0 + %c1 - .\n\t"
++		_ASM_PTR "%P0 - .\n\t"
+ 		".popsection \n\t"
+-		: :  "i" (key), "i" (branch) : : l_yes);
++		: :  "X" (&((char *)key)[branch]) : : l_yes);
+ 
+ 	return false;
+ l_yes:
+@@ -42,9 +42,9 @@
+ 		".pushsection __jump_table,  \"aw\" \n\t"
+ 		_ASM_ALIGN "\n\t"
+ 		".long 1b - ., %l[l_yes] - . \n\t"
+-		_ASM_PTR "%c0 + %c1 - .\n\t"
++		_ASM_PTR "%P0 - .\n\t"
+ 		".popsection \n\t"
+-		: :  "i" (key), "i" (branch) : : l_yes);
++		: : "X" (&((char *)key)[branch]) : : l_yes);
+ 
+ 	return false;
+ l_yes:
+diff -urN linux-5.0.2/arch/x86/include/asm/kvm_host.h linux-5.0.2-pie/arch/x86/include/asm/kvm_host.h
+--- linux-5.0.2/arch/x86/include/asm/kvm_host.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/kvm_host.h	2019-03-16 10:50:57.101692298 -0400
+@@ -1500,9 +1500,13 @@
+ 	".pushsection .fixup, \"ax\" \n" \
+ 	"667: \n\t" \
+ 	cleanup_insn "\n\t"		      \
+-	"cmpb $0, kvm_rebooting \n\t"	      \
++	"cmpb $0, kvm_rebooting" __ASM_SEL(, (%%rip)) " \n\t" \
+ 	"jne 668b \n\t"      		      \
+-	__ASM_SIZE(push) " $666b \n\t"	      \
++	__ASM_SIZE(push) "$0 \n\t"		\
++	__ASM_SIZE(push) "%%" _ASM_AX " \n\t"		\
++	_ASM_MOVABS " $666b, %%" _ASM_AX "\n\t"	\
++	_ASM_MOV " %%" _ASM_AX ", " __ASM_SEL(4, 8) "(%%" _ASM_SP ") \n\t" \
++	__ASM_SIZE(pop) "%%" _ASM_AX " \n\t"		\
+ 	"jmp kvm_spurious_fault \n\t"	      \
+ 	".popsection \n\t" \
+ 	_ASM_EXTABLE(666b, 667b)
+diff -urN linux-5.0.2/arch/x86/include/asm/module.h linux-5.0.2-pie/arch/x86/include/asm/module.h
+--- linux-5.0.2/arch/x86/include/asm/module.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/module.h	2019-03-16 10:50:57.105692388 -0400
+@@ -5,12 +5,23 @@
+ #include <asm-generic/module.h>
+ #include <asm/orc_types.h>
+ 
++#ifdef CONFIG_X86_PIE
++struct mod_got_sec {
++	struct elf64_shdr	*got;
++	int			got_num_entries;
++	int			got_max_entries;
++};
++#endif
++
+ struct mod_arch_specific {
+ #ifdef CONFIG_UNWINDER_ORC
+ 	unsigned int num_orcs;
+ 	int *orc_unwind_ip;
+ 	struct orc_entry *orc_unwind;
+ #endif
++#ifdef CONFIG_X86_PIE
++	struct mod_got_sec	core;
++#endif
+ };
+ 
+ #ifdef CONFIG_X86_64
+diff -urN linux-5.0.2/arch/x86/include/asm/page_64_types.h linux-5.0.2-pie/arch/x86/include/asm/page_64_types.h
+--- linux-5.0.2/arch/x86/include/asm/page_64_types.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/page_64_types.h	2019-03-16 10:50:57.109692478 -0400
+@@ -52,7 +52,11 @@
+ #define __PAGE_OFFSET           __PAGE_OFFSET_BASE_L4
+ #endif /* CONFIG_DYNAMIC_MEMORY_LAYOUT */
+ 
++#ifdef CONFIG_RANDOMIZE_BASE_LARGE
++#define __START_KERNEL_map	_AC(0xffffffff00000000, UL)
++#else
+ #define __START_KERNEL_map	_AC(0xffffffff80000000, UL)
++#endif /* CONFIG_RANDOMIZE_BASE_LARGE */
+ 
+ /* See Documentation/x86/x86_64/mm.txt for a description of the memory map. */
+ 
+@@ -71,11 +75,17 @@
+  * On KASLR use 1 GiB by default, leaving 1 GiB for modules once the
+  * page tables are fully set up.
+  *
++ * On PIE, we relocate the binary 2G lower so add this extra space.
++ *
+  * If KASLR is disabled we can shrink it to 0.5 GiB and increase the size
+  * of the modules area to 1.5 GiB.
+  */
+ #ifdef CONFIG_RANDOMIZE_BASE
++#ifdef CONFIG_RANDOMIZE_BASE_LARGE
++#define KERNEL_IMAGE_SIZE	(_AC(3, UL) * 1024 * 1024 * 1024)
++#else
+ #define KERNEL_IMAGE_SIZE	(1024 * 1024 * 1024)
++#endif
+ #else
+ #define KERNEL_IMAGE_SIZE	(512 * 1024 * 1024)
+ #endif
+diff -urN linux-5.0.2/arch/x86/include/asm/paravirt_types.h linux-5.0.2-pie/arch/x86/include/asm/paravirt_types.h
+--- linux-5.0.2/arch/x86/include/asm/paravirt_types.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/paravirt_types.h	2019-03-16 10:50:57.097692208 -0400
+@@ -342,9 +342,17 @@
+ #define PARAVIRT_PATCH(x)					\
+ 	(offsetof(struct paravirt_patch_template, x) / sizeof(void *))
+ 
++#ifdef CONFIG_X86_PIE
++#define paravirt_opptr_call "a"
++#define paravirt_opptr_type "p"
++#else
++#define paravirt_opptr_call "c"
++#define paravirt_opptr_type "i"
++#endif
++
+ #define paravirt_type(op)				\
+ 	[paravirt_typenum] "i" (PARAVIRT_PATCH(op)),	\
+-	[paravirt_opptr] "i" (&(pv_ops.op))
++	[paravirt_opptr] paravirt_opptr_type (&(pv_ops.op))
+ #define paravirt_clobber(clobber)		\
+ 	[paravirt_clobber] "i" (clobber)
+ 
+@@ -392,7 +400,7 @@
+  */
+ #define PARAVIRT_CALL					\
+ 	ANNOTATE_RETPOLINE_SAFE				\
+-	"call *%c[paravirt_opptr];"
++	"call *%" paravirt_opptr_call "[paravirt_opptr];"
+ 
+ /*
+  * These macros are intended to wrap calls through one of the paravirt
+diff -urN linux-5.0.2/arch/x86/include/asm/percpu.h linux-5.0.2-pie/arch/x86/include/asm/percpu.h
+--- linux-5.0.2/arch/x86/include/asm/percpu.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/percpu.h	2019-03-16 10:50:57.097692208 -0400
+@@ -5,9 +5,11 @@
+ #ifdef CONFIG_X86_64
+ #define __percpu_seg		gs
+ #define __percpu_mov_op		movq
++#define __percpu_rel		(%rip)
+ #else
+ #define __percpu_seg		fs
+ #define __percpu_mov_op		movl
++#define __percpu_rel
+ #endif
+ 
+ #ifdef __ASSEMBLY__
+@@ -28,10 +30,14 @@
+ #define PER_CPU(var, reg)						\
+ 	__percpu_mov_op %__percpu_seg:this_cpu_off, reg;		\
+ 	lea var(reg), reg
+-#define PER_CPU_VAR(var)	%__percpu_seg:var
++/* Compatible with Position Independent Code */
++#define PER_CPU_VAR(var)		%__percpu_seg:(var)##__percpu_rel
++/* Rare absolute reference */
++#define PER_CPU_VAR_ABS(var)		%__percpu_seg:var
+ #else /* ! SMP */
+ #define PER_CPU(var, reg)	__percpu_mov_op $var, reg
+-#define PER_CPU_VAR(var)	var
++#define PER_CPU_VAR(var)	(var)##__percpu_rel
++#define PER_CPU_VAR_ABS(var)	var
+ #endif	/* SMP */
+ 
+ #ifdef CONFIG_X86_64_SMP
+@@ -209,27 +215,34 @@
+ 	pfo_ret__;					\
+ })
+ 
++/* Position Independent code uses relative addresses only */
++#ifdef CONFIG_X86_PIE
++#define __percpu_stable_arg __percpu_arg(a1)
++#else
++#define __percpu_stable_arg __percpu_arg(P1)
++#endif
++
+ #define percpu_stable_op(op, var)			\
+ ({							\
+ 	typeof(var) pfo_ret__;				\
+ 	switch (sizeof(var)) {				\
+ 	case 1:						\
+-		asm(op "b "__percpu_arg(P1)",%0"	\
++		asm(op "b "__percpu_stable_arg ",%0"	\
+ 		    : "=q" (pfo_ret__)			\
+ 		    : "p" (&(var)));			\
+ 		break;					\
+ 	case 2:						\
+-		asm(op "w "__percpu_arg(P1)",%0"	\
++		asm(op "w "__percpu_stable_arg ",%0"	\
+ 		    : "=r" (pfo_ret__)			\
+ 		    : "p" (&(var)));			\
+ 		break;					\
+ 	case 4:						\
+-		asm(op "l "__percpu_arg(P1)",%0"	\
++		asm(op "l "__percpu_stable_arg ",%0"	\
+ 		    : "=r" (pfo_ret__)			\
+ 		    : "p" (&(var)));			\
+ 		break;					\
+ 	case 8:						\
+-		asm(op "q "__percpu_arg(P1)",%0"	\
++		asm(op "q "__percpu_stable_arg ",%0"	\
+ 		    : "=r" (pfo_ret__)			\
+ 		    : "p" (&(var)));			\
+ 		break;					\
+diff -urN linux-5.0.2/arch/x86/include/asm/pgtable_64_types.h linux-5.0.2-pie/arch/x86/include/asm/pgtable_64_types.h
+--- linux-5.0.2/arch/x86/include/asm/pgtable_64_types.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/pgtable_64_types.h	2019-03-16 10:50:57.105692388 -0400
+@@ -7,6 +7,7 @@
+ #ifndef __ASSEMBLY__
+ #include <linux/types.h>
+ #include <asm/kaslr.h>
++#include <asm/sections.h>
+ 
+ /*
+  * These are used to make use of C type-checking..
+@@ -141,7 +142,12 @@
+ 
+ #define VMALLOC_END		(VMALLOC_START + (VMALLOC_SIZE_TB << 40) - 1)
+ 
++#ifdef CONFIG_DYNAMIC_MODULE_BASE
++#define MODULES_VADDR		ALIGN(((unsigned long)_end + PAGE_SIZE), PMD_SIZE)
++#else
+ #define MODULES_VADDR		(__START_KERNEL_map + KERNEL_IMAGE_SIZE)
++#endif
++
+ /* The module sections ends with the start of the fixmap */
+ #define MODULES_END		_AC(0xffffffffff000000, UL)
+ #define MODULES_LEN		(MODULES_END - MODULES_VADDR)
+diff -urN linux-5.0.2/arch/x86/include/asm/pm-trace.h linux-5.0.2-pie/arch/x86/include/asm/pm-trace.h
+--- linux-5.0.2/arch/x86/include/asm/pm-trace.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/pm-trace.h	2019-03-16 10:50:57.097692208 -0400
+@@ -8,7 +8,7 @@
+ do {								\
+ 	if (pm_trace_enabled) {					\
+ 		const void *tracedata;				\
+-		asm volatile(_ASM_MOV " $1f,%0\n"		\
++		asm volatile(_ASM_MOVABS " $1f,%0\n"		\
+ 			     ".section .tracedata,\"a\"\n"	\
+ 			     "1:\t.word %c1\n\t"		\
+ 			     _ASM_PTR " %c2\n"			\
+diff -urN linux-5.0.2/arch/x86/include/asm/processor.h linux-5.0.2-pie/arch/x86/include/asm/processor.h
+--- linux-5.0.2/arch/x86/include/asm/processor.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/processor.h	2019-03-16 10:50:57.105692388 -0400
+@@ -24,6 +24,7 @@
+ #include <asm/special_insns.h>
+ #include <asm/fpu/types.h>
+ #include <asm/unwind_hints.h>
++#include <asm/sections.h>
+ 
+ #include <linux/personality.h>
+ #include <linux/cache.h>
+@@ -402,7 +403,8 @@
+ 
+ static inline unsigned long cpu_kernelmode_gs_base(int cpu)
+ {
+-	return (unsigned long)per_cpu(irq_stack_union.gs_base, cpu);
++	return (unsigned long)per_cpu(irq_stack_union.gs_base, cpu) -
++		(unsigned long)__per_cpu_start;
+ }
+ 
+ DECLARE_PER_CPU(char *, irq_stack_ptr);
+@@ -414,7 +416,8 @@
+ void save_fsgs_for_kvm(void);
+ #endif
+ #else	/* X86_64 */
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ /*
+  * Make sure stack canary segment base is cached-aligned:
+  *   "For Intel Atom processors, avoid non zero segment base address
+@@ -723,11 +726,13 @@
+ 		"pushfq\n\t"
+ 		"mov %%cs, %0\n\t"
+ 		"pushq %q0\n\t"
+-		"pushq $1f\n\t"
++		"movabsq $1f, %q0\n\t"
++		"pushq %q0\n\t"
+ 		"iretq\n\t"
+ 		UNWIND_HINT_RESTORE
+ 		"1:"
+-		: "=&r" (tmp), ASM_CALL_CONSTRAINT : : "cc", "memory");
++		: "=&r" (tmp), ASM_CALL_CONSTRAINT
++		: : "cc", "memory");
+ #endif
+ }
+ 
+diff -urN linux-5.0.2/arch/x86/include/asm/sections.h linux-5.0.2-pie/arch/x86/include/asm/sections.h
+--- linux-5.0.2/arch/x86/include/asm/sections.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/sections.h	2019-03-16 10:50:57.105692388 -0400
+@@ -13,4 +13,8 @@
+ extern char __end_rodata_hpage_align[];
+ #endif
+ 
++#if defined(CONFIG_X86_PIE)
++extern char __start_got[], __end_got[];
++#endif
++
+ #endif	/* _ASM_X86_SECTIONS_H */
+diff -urN linux-5.0.2/arch/x86/include/asm/setup.h linux-5.0.2-pie/arch/x86/include/asm/setup.h
+--- linux-5.0.2/arch/x86/include/asm/setup.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/setup.h	2019-03-16 10:50:57.097692208 -0400
+@@ -71,7 +71,7 @@
+  * This is set up by the setup-routine at boot-time
+  */
+ extern struct boot_params boot_params;
+-extern char _text[];
++extern char _text[] __default_visibility;
+ 
+ static inline bool kaslr_enabled(void)
+ {
+diff -urN linux-5.0.2/arch/x86/include/asm/stackprotector.h linux-5.0.2-pie/arch/x86/include/asm/stackprotector.h
+--- linux-5.0.2/arch/x86/include/asm/stackprotector.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/include/asm/stackprotector.h	2019-03-16 10:50:57.105692388 -0400
+@@ -52,6 +52,10 @@
+ #define GDT_STACK_CANARY_INIT						\
+ 	[GDT_ENTRY_STACK_CANARY] = GDT_ENTRY_INIT(0x4090, 0, 0x18),
+ 
++#ifdef CONFIG_X86_GLOBAL_STACKPROTECTOR
++extern unsigned long __stack_chk_guard;
++#endif
++
+ /*
+  * Initialize the stackprotector canary value.
+  *
+@@ -63,7 +67,7 @@
+ 	u64 canary;
+ 	u64 tsc;
+ 
+-#ifdef CONFIG_X86_64
++#if defined(CONFIG_X86_64) && !defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	BUILD_BUG_ON(offsetof(union irq_stack_union, stack_canary) != 40);
+ #endif
+ 	/*
+@@ -77,17 +81,22 @@
+ 	canary += tsc + (tsc << 32UL);
+ 	canary &= CANARY_MASK;
+ 
++#ifdef CONFIG_X86_GLOBAL_STACKPROTECTOR
++	if (__stack_chk_guard == 0)
++		__stack_chk_guard = canary ?: 1;
++#else /* !CONFIG_X86_GLOBAL_STACKPROTECTOR */
+ 	current->stack_canary = canary;
+ #ifdef CONFIG_X86_64
+ 	this_cpu_write(irq_stack_union.stack_canary, canary);
+-#else
++#else /* CONFIG_X86_32 */
+ 	this_cpu_write(stack_canary.canary, canary);
+ #endif
++#endif
+ }
+ 
+ static inline void setup_stack_canary_segment(int cpu)
+ {
+-#ifdef CONFIG_X86_32
++#if defined(CONFIG_X86_32) && !defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	unsigned long canary = (unsigned long)&per_cpu(stack_canary, cpu);
+ 	struct desc_struct *gdt_table = get_cpu_gdt_rw(cpu);
+ 	struct desc_struct desc;
+@@ -100,7 +109,7 @@
+ 
+ static inline void load_stack_canary_segment(void)
+ {
+-#ifdef CONFIG_X86_32
++#if defined(CONFIG_X86_32) && !defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	asm("mov %0, %%gs" : : "r" (__KERNEL_STACK_CANARY) : "memory");
+ #endif
+ }
+@@ -116,7 +125,7 @@
+ 
+ static inline void load_stack_canary_segment(void)
+ {
+-#ifdef CONFIG_X86_32
++#if defined(CONFIG_X86_32) && !defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	asm volatile ("mov %0, %%gs" : : "r" (0));
+ #endif
+ }
+diff -urN linux-5.0.2/arch/x86/Kconfig linux-5.0.2-pie/arch/x86/Kconfig
+--- linux-5.0.2/arch/x86/Kconfig	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/Kconfig	2019-03-16 10:50:57.109692478 -0400
+@@ -2220,6 +2220,51 @@
+ 
+ 	   If unsure, leave at the default value.
+ 
++# Module section starts just after the end of the kernel module
++config DYNAMIC_MODULE_BASE
++	bool
++
++config X86_GLOBAL_STACKPROTECTOR
++	bool "Stack cookie using a global variable"
++	depends on CC_STACKPROTECTOR_AUTO
++	default n
++	help
++	   This option turns on the "stack-protector" GCC feature using a global
++	   variable instead of a segment register. It is useful when the
++	   compiler does not support custom segment registers when building a
++	   position independent (PIE) binary.
++
++	   If unsure, say N
++
++config X86_PIE
++	bool
++	depends on X86_64
++	select DEFAULT_HIDDEN_SYMS
++	select WEAK_PROVIDE_HIDDEN
++	select DYNAMIC_MODULE_BASE
++	select MODULE_REL_CRCS if MODVERSIONS
++
++config RANDOMIZE_BASE_LARGE
++	bool "Increase the randomization range of the kernel image"
++	depends on X86_64 && RANDOMIZE_BASE
++	select X86_PIE
++	select X86_MODULE_PLTS if MODULES
++	default n
++	help
++	  Build the kernel as a Position Independent Executable (PIE) and
++	  increase the available randomization range from 1GB to 3GB.
++
++	  This option impacts performance on kernel CPU intensive workloads up
++	  to 10% due to PIE generated code. Impact on user-mode processes and
++	  typical usage would be significantly less (0.50% when you build the
++	  kernel).
++
++	  The kernel and modules will generate slightly more assembly (1 to 2%
++	  increase on the .text sections). The vmlinux binary will be
++	  significantly smaller due to fewer relocations.
++
++	  If unsure say N
++
+ config HOTPLUG_CPU
+ 	bool "Support for hot-pluggable CPUs"
+ 	depends on SMP
+diff -urN linux-5.0.2/arch/x86/kernel/acpi/wakeup_64.S linux-5.0.2-pie/arch/x86/kernel/acpi/wakeup_64.S
+--- linux-5.0.2/arch/x86/kernel/acpi/wakeup_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/acpi/wakeup_64.S	2019-03-16 10:50:57.097692208 -0400
+@@ -14,7 +14,7 @@
+ 	 * Hooray, we are in Long 64-bit mode (but still running in low memory)
+ 	 */
+ ENTRY(wakeup_long64)
+-	movq	saved_magic, %rax
++	movq	saved_magic(%rip), %rax
+ 	movq	$0x123456789abcdef0, %rdx
+ 	cmpq	%rdx, %rax
+ 	jne	bogus_64_magic
+@@ -25,14 +25,14 @@
+ 	movw	%ax, %es
+ 	movw	%ax, %fs
+ 	movw	%ax, %gs
+-	movq	saved_rsp, %rsp
++	movq	saved_rsp(%rip), %rsp
+ 
+-	movq	saved_rbx, %rbx
+-	movq	saved_rdi, %rdi
+-	movq	saved_rsi, %rsi
+-	movq	saved_rbp, %rbp
++	movq	saved_rbx(%rip), %rbx
++	movq	saved_rdi(%rip), %rdi
++	movq	saved_rsi(%rip), %rsi
++	movq	saved_rbp(%rip), %rbp
+ 
+-	movq	saved_rip, %rax
++	movq	saved_rip(%rip), %rax
+ 	jmp	*%rax
+ ENDPROC(wakeup_long64)
+ 
+@@ -45,7 +45,7 @@
+ 	xorl	%eax, %eax
+ 	call	save_processor_state
+ 
+-	movq	$saved_context, %rax
++	leaq	saved_context(%rip), %rax
+ 	movq	%rsp, pt_regs_sp(%rax)
+ 	movq	%rbp, pt_regs_bp(%rax)
+ 	movq	%rsi, pt_regs_si(%rax)
+@@ -64,13 +64,14 @@
+ 	pushfq
+ 	popq	pt_regs_flags(%rax)
+ 
+-	movq	$.Lresume_point, saved_rip(%rip)
++	leaq	.Lresume_point(%rip), %rax
++	movq	%rax, saved_rip(%rip)
+ 
+-	movq	%rsp, saved_rsp
+-	movq	%rbp, saved_rbp
+-	movq	%rbx, saved_rbx
+-	movq	%rdi, saved_rdi
+-	movq	%rsi, saved_rsi
++	movq	%rsp, saved_rsp(%rip)
++	movq	%rbp, saved_rbp(%rip)
++	movq	%rbx, saved_rbx(%rip)
++	movq	%rdi, saved_rdi(%rip)
++	movq	%rsi, saved_rsi(%rip)
+ 
+ 	addq	$8, %rsp
+ 	movl	$3, %edi
+@@ -82,7 +83,7 @@
+ 	.align 4
+ .Lresume_point:
+ 	/* We don't restore %rax, it must be 0 anyway */
+-	movq	$saved_context, %rax
++	leaq	saved_context(%rip), %rax
+ 	movq	saved_context_cr4(%rax), %rbx
+ 	movq	%rbx, %cr4
+ 	movq	saved_context_cr3(%rax), %rbx
+diff -urN linux-5.0.2/arch/x86/kernel/asm-offsets_32.c linux-5.0.2-pie/arch/x86/kernel/asm-offsets_32.c
+--- linux-5.0.2/arch/x86/kernel/asm-offsets_32.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/asm-offsets_32.c	2019-03-16 10:50:57.105692388 -0400
+@@ -56,7 +56,8 @@
+ 	       offsetof(struct cpu_entry_area, tss.x86_tss.sp1) -
+ 	       offsetofend(struct cpu_entry_area, entry_stack_page.stack));
+ 
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	BLANK();
+ 	OFFSET(stack_canary_offset, stack_canary, canary);
+ #endif
+diff -urN linux-5.0.2/arch/x86/kernel/asm-offsets_64.c linux-5.0.2-pie/arch/x86/kernel/asm-offsets_64.c
+--- linux-5.0.2/arch/x86/kernel/asm-offsets_64.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/asm-offsets_64.c	2019-03-16 10:50:57.105692388 -0400
+@@ -70,7 +70,8 @@
+ 	OFFSET(TSS_ist, tss_struct, x86_tss.ist);
+ 	BLANK();
+ 
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	DEFINE(stack_canary_offset, offsetof(union irq_stack_union, stack_canary));
+ 	BLANK();
+ #endif
+diff -urN linux-5.0.2/arch/x86/kernel/asm-offsets.c linux-5.0.2-pie/arch/x86/kernel/asm-offsets.c
+--- linux-5.0.2/arch/x86/kernel/asm-offsets.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/asm-offsets.c	2019-03-16 10:50:57.105692388 -0400
+@@ -33,7 +33,8 @@
+ {
+ 	BLANK();
+ 	OFFSET(TASK_threadsp, task_struct, thread.sp);
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	OFFSET(TASK_stack_canary, task_struct, stack_canary);
+ #endif
+ 
+diff -urN linux-5.0.2/arch/x86/kernel/cpu/common.c linux-5.0.2-pie/arch/x86/kernel/cpu/common.c
+--- linux-5.0.2/arch/x86/kernel/cpu/common.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/cpu/common.c	2019-03-16 10:50:57.105692388 -0400
+@@ -1613,7 +1613,8 @@
+ 	(unsigned long)&init_thread_union + THREAD_SIZE;
+ EXPORT_PER_CPU_SYMBOL(cpu_current_top_of_stack);
+ 
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ DEFINE_PER_CPU_ALIGNED(struct stack_canary, stack_canary);
+ #endif
+ 
+diff -urN linux-5.0.2/arch/x86/kernel/cpu/microcode/core.c linux-5.0.2-pie/arch/x86/kernel/cpu/microcode/core.c
+--- linux-5.0.2/arch/x86/kernel/cpu/microcode/core.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/cpu/microcode/core.c	2019-03-16 10:50:57.097692208 -0400
+@@ -149,8 +149,8 @@
+ 	return *res;
+ }
+ 
+-extern struct builtin_fw __start_builtin_fw[];
+-extern struct builtin_fw __end_builtin_fw[];
++extern struct builtin_fw __start_builtin_fw[] __default_visibility;
++extern struct builtin_fw __end_builtin_fw[] __default_visibility;
+ 
+ bool get_builtin_firmware(struct cpio_data *cd, const char *name)
+ {
+diff -urN linux-5.0.2/arch/x86/kernel/ftrace.c linux-5.0.2-pie/arch/x86/kernel/ftrace.c
+--- linux-5.0.2/arch/x86/kernel/ftrace.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/ftrace.c	2019-03-16 10:50:57.105692388 -0400
+@@ -102,7 +102,7 @@
+ 
+ static int
+ ftrace_modify_code_direct(unsigned long ip, unsigned const char *old_code,
+-		   unsigned const char *new_code)
++			  unsigned const char *new_code)
+ {
+ 	unsigned char replaced[MCOUNT_INSN_SIZE];
+ 
+@@ -135,6 +135,53 @@
+ 	return 0;
+ }
+ 
++/* Bytes before call GOT offset */
++static const unsigned char got_call_preinsn[] = { 0xff, 0x15 };
++
++static int
++ftrace_modify_initial_code(unsigned long ip, unsigned const char *old_code,
++			   unsigned const char *new_code)
++{
++	unsigned char replaced[MCOUNT_INSN_SIZE + 1];
++
++	/*
++	 * If PIE is not enabled default to the original approach to code
++	 * modification.
++	 */
++	if (!IS_ENABLED(CONFIG_X86_PIE))
++		return ftrace_modify_code_direct(ip, old_code, new_code);
++
++	ftrace_expected = old_code;
++
++	/* Ensure the instructions point to a call to the GOT */
++	if (probe_kernel_read(replaced, (void *)ip, sizeof(replaced))) {
++		WARN_ONCE(1, "invalid function");
++		return -EFAULT;
++	}
++
++	if (memcmp(replaced, got_call_preinsn, sizeof(got_call_preinsn))) {
++		WARN_ONCE(1, "invalid function call");
++		return -EINVAL;
++	}
++
++	/*
++	 * Build a nop slide with a 5-byte nop and 1-byte nop to keep the ftrace
++	 * hooking algorithm working with the expected 5 bytes instruction.
++	 */
++	memset(replaced, ideal_nops[1][0], sizeof(replaced));
++	memcpy(replaced, new_code, MCOUNT_INSN_SIZE);
++
++	ip = text_ip_addr(ip);
++
++	if (probe_kernel_write((void *)ip, replaced, sizeof(replaced)))
++		return -EPERM;
++
++	sync_core();
++
++	return 0;
++
++}
++
+ int ftrace_make_nop(struct module *mod,
+ 		    struct dyn_ftrace *rec, unsigned long addr)
+ {
+@@ -153,7 +200,7 @@
+ 	 * just modify the code directly.
+ 	 */
+ 	if (addr == MCOUNT_ADDR)
+-		return ftrace_modify_code_direct(rec->ip, old, new);
++		return ftrace_modify_initial_code(rec->ip, old, new);
+ 
+ 	ftrace_expected = NULL;
+ 
+diff -urN linux-5.0.2/arch/x86/kernel/head_32.S linux-5.0.2-pie/arch/x86/kernel/head_32.S
+--- linux-5.0.2/arch/x86/kernel/head_32.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/head_32.S	2019-03-16 10:50:57.105692388 -0400
+@@ -375,7 +375,8 @@
+  */
+ __INIT
+ setup_once:
+-#ifdef CONFIG_STACKPROTECTOR
++#if defined(CONFIG_STACKPROTECTOR) && \
++	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
+ 	/*
+ 	 * Configure the stack canary. The linker can't handle this by
+ 	 * relocation.  Manually set base address in stack canary
+diff -urN linux-5.0.2/arch/x86/kernel/head64.c linux-5.0.2-pie/arch/x86/kernel/head64.c
+--- linux-5.0.2/arch/x86/kernel/head64.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/head64.c	2019-03-16 10:50:57.109692478 -0400
+@@ -62,6 +62,10 @@
+ #endif
+ 
+ #define __head	__section(.head.text)
++#define pud_count(x)   (((x + (PUD_SIZE - 1)) & ~(PUD_SIZE - 1)) >> PUD_SHIFT)
++
++/* Required for read_cr3 when building as PIE */
++unsigned long __force_order;
+ 
+ static void __head *fixup_pointer(void *ptr, unsigned long physaddr)
+ {
+@@ -116,6 +120,8 @@
+ 	unsigned long vaddr, vaddr_end;
+ 	unsigned long load_delta, *p;
+ 	unsigned long pgtable_flags;
++	unsigned long level3_kernel_start, level3_kernel_count;
++	unsigned long level3_fixmap_start;
+ 	pgdval_t *pgd;
+ 	p4dval_t *p4d;
+ 	pudval_t *pud;
+@@ -147,6 +153,11 @@
+ 	/* Include the SME encryption mask in the fixup value */
+ 	load_delta += sme_get_me_mask();
+ 
++	/* Look at the randomization spread to adapt page table used */
++	level3_kernel_start = pud_index(__START_KERNEL_map);
++	level3_kernel_count = pud_count(KERNEL_IMAGE_SIZE);
++	level3_fixmap_start = level3_kernel_start + level3_kernel_count;
++
+ 	/* Fixup the physical addresses in the page table */
+ 
+ 	pgd = fixup_pointer(&early_top_pgt, physaddr);
+@@ -163,8 +174,9 @@
+ 	}
+ 
+ 	pud = fixup_pointer(&level3_kernel_pgt, physaddr);
+-	pud[510] += load_delta;
+-	pud[511] += load_delta;
++	for (i = 0; i < level3_kernel_count; i++)
++		pud[level3_kernel_start + i] += load_delta;
++	pud[level3_fixmap_start] += load_delta;
+ 
+ 	pmd = fixup_pointer(level2_fixmap_pgt, physaddr);
+ 	for (i = FIXMAP_PMD_TOP; i > FIXMAP_PMD_TOP - FIXMAP_PMD_NUM; i--)
+@@ -223,7 +235,7 @@
+ 	 */
+ 
+ 	pmd = fixup_pointer(level2_kernel_pgt, physaddr);
+-	for (i = 0; i < PTRS_PER_PMD; i++) {
++	for (i = 0; i < PTRS_PER_PMD * level3_kernel_count; i++) {
+ 		if (pmd[i] & _PAGE_PRESENT)
+ 			pmd[i] += load_delta;
+ 	}
+@@ -408,12 +420,15 @@
+ 	 * Build-time sanity checks on the kernel image and module
+ 	 * area mappings. (these are purely build-time and produce no code)
+ 	 */
++#ifndef CONFIG_DYNAMIC_MODULE_BASE
+ 	BUILD_BUG_ON(MODULES_VADDR < __START_KERNEL_map);
+ 	BUILD_BUG_ON(MODULES_VADDR - __START_KERNEL_map < KERNEL_IMAGE_SIZE);
+-	BUILD_BUG_ON(MODULES_LEN + KERNEL_IMAGE_SIZE > 2*PUD_SIZE);
++	BUILD_BUG_ON(!IS_ENABLED(CONFIG_RANDOMIZE_BASE_LARGE) &&
++		     MODULES_LEN + KERNEL_IMAGE_SIZE > 2*PUD_SIZE);
+ 	BUILD_BUG_ON((__START_KERNEL_map & ~PMD_MASK) != 0);
+ 	BUILD_BUG_ON((MODULES_VADDR & ~PMD_MASK) != 0);
+ 	BUILD_BUG_ON(!(MODULES_VADDR > __START_KERNEL));
++#endif
+ 	MAYBE_BUILD_BUG_ON(!(((MODULES_END - 1) & PGDIR_MASK) ==
+ 				(__START_KERNEL & PGDIR_MASK)));
+ 	BUILD_BUG_ON(__fix_to_virt(__end_of_fixed_addresses) <= MODULES_END);
+diff -urN linux-5.0.2/arch/x86/kernel/head_64.S linux-5.0.2-pie/arch/x86/kernel/head_64.S
+--- linux-5.0.2/arch/x86/kernel/head_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/head_64.S	2019-03-16 10:50:57.109692478 -0400
+@@ -42,12 +42,16 @@
+ 
+ #define l4_index(x)	(((x) >> 39) & 511)
+ #define pud_index(x)	(((x) >> PUD_SHIFT) & (PTRS_PER_PUD-1))
++#define pud_count(x)   (((x + (PUD_SIZE - 1)) & ~(PUD_SIZE - 1)) >> PUD_SHIFT)
+ 
+ L4_PAGE_OFFSET = l4_index(__PAGE_OFFSET_BASE_L4)
+ L4_START_KERNEL = l4_index(__START_KERNEL_map)
+ 
+ L3_START_KERNEL = pud_index(__START_KERNEL_map)
+ 
++/* Adapt page table L3 space based on range of randomization */
++L3_KERNEL_ENTRY_COUNT = pud_count(KERNEL_IMAGE_SIZE)
++
+ 	.text
+ 	__HEAD
+ 	.code64
+@@ -90,8 +94,10 @@
+ 	popq	%rsi
+ 
+ 	/* Form the CR3 value being sure to include the CR3 modifier */
+-	addq	$(early_top_pgt - __START_KERNEL_map), %rax
++	movabs  $(early_top_pgt - __START_KERNEL_map), %rcx
++	addq    %rcx, %rax
+ 	jmp 1f
++
+ ENTRY(secondary_startup_64)
+ 	UNWIND_HINT_EMPTY
+ 	/*
+@@ -120,7 +126,8 @@
+ 	popq	%rsi
+ 
+ 	/* Form the CR3 value being sure to include the CR3 modifier */
+-	addq	$(init_top_pgt - __START_KERNEL_map), %rax
++	movabs	$(init_top_pgt - __START_KERNEL_map), %rcx
++	addq    %rcx, %rax
+ 1:
+ 
+ 	/* Enable PAE mode, PGE and LA57 */
+@@ -138,7 +145,7 @@
+ 	movq	%rax, %cr3
+ 
+ 	/* Ensure I am executing from virtual addresses */
+-	movq	$1f, %rax
++	movabs  $1f, %rax
+ 	ANNOTATE_RETPOLINE_SAFE
+ 	jmp	*%rax
+ 1:
+@@ -235,11 +242,12 @@
+ 	 *	REX.W + FF /5 JMP m16:64 Jump far, absolute indirect,
+ 	 *		address given in m16:64.
+ 	 */
+-	pushq	$.Lafter_lret	# put return address on stack for unwinder
++	movabs  $.Lafter_lret, %rax
++	pushq	%rax		# put return address on stack for unwinder
+ 	xorl	%ebp, %ebp	# clear frame pointer
+-	movq	initial_code(%rip), %rax
++	leaq	initial_code(%rip), %rax
+ 	pushq	$__KERNEL_CS	# set correct cs
+-	pushq	%rax		# target address in negative space
++	pushq	(%rax)		# target address in negative space
+ 	lretq
+ .Lafter_lret:
+ END(secondary_startup_64)
+@@ -265,7 +273,11 @@
+ 	GLOBAL(initial_code)
+ 	.quad	x86_64_start_kernel
+ 	GLOBAL(initial_gs)
++#ifdef CONFIG_X86_PIE
++	.quad	0
++#else
+ 	.quad	INIT_PER_CPU_VAR(irq_stack_union)
++#endif
+ 	GLOBAL(initial_stack)
+ 	/*
+ 	 * The SIZEOF_PTREGS gap is a convention which helps the in-kernel
+@@ -424,7 +436,12 @@
+ NEXT_PAGE(level3_kernel_pgt)
+ 	.fill	L3_START_KERNEL,8,0
+ 	/* (2^48-(2*1024*1024*1024)-((2^39)*511))/(2^30) = 510 */
+-	.quad	level2_kernel_pgt - __START_KERNEL_map + _KERNPG_TABLE_NOENC
++	i = 0
++	.rept	L3_KERNEL_ENTRY_COUNT
++	.quad	level2_kernel_pgt - __START_KERNEL_map + _KERNPG_TABLE_NOENC \
++		+ PAGE_SIZE*i
++	i = i + 1
++	.endr
+ 	.quad	level2_fixmap_pgt - __START_KERNEL_map + _PAGE_TABLE_NOENC
+ 
+ NEXT_PAGE(level2_kernel_pgt)
+diff -urN linux-5.0.2/arch/x86/kernel/kvm.c linux-5.0.2-pie/arch/x86/kernel/kvm.c
+--- linux-5.0.2/arch/x86/kernel/kvm.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/kvm.c	2019-03-16 10:50:57.101692298 -0400
+@@ -826,8 +826,10 @@
+ ".global __raw_callee_save___kvm_vcpu_is_preempted;"
+ ".type __raw_callee_save___kvm_vcpu_is_preempted, @function;"
+ "__raw_callee_save___kvm_vcpu_is_preempted:"
+-"movq	__per_cpu_offset(,%rdi,8), %rax;"
+-"cmpb	$0, " __stringify(KVM_STEAL_TIME_preempted) "+steal_time(%rax);"
++"leaq	__per_cpu_offset(%rip), %rax;"
++"movq	(%rax,%rdi,8), %rax;"
++"addq	" __stringify(KVM_STEAL_TIME_preempted) "+steal_time(%rip), %rax;"
++"cmpb	$0, (%rax);"
+ "setne	%al;"
+ "ret;"
+ ".popsection");
+diff -urN linux-5.0.2/arch/x86/kernel/Makefile linux-5.0.2-pie/arch/x86/kernel/Makefile
+--- linux-5.0.2/arch/x86/kernel/Makefile	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/Makefile	2019-03-16 10:50:57.097692208 -0400
+@@ -22,6 +22,12 @@
+ CFLAGS_REMOVE_head64.o = -pg
+ endif
+ 
++ifdef CONFIG_X86_PIE
++# Remove PIE and retpoline flags that are incompatible with mcmodel=large
++CFLAGS_REMOVE_head64.o += -fPIE -mindirect-branch=thunk-extern -mindirect-branch-register
++CFLAGS_head64.o = -mcmodel=large
++endif
++
+ KASAN_SANITIZE_head$(BITS).o				:= n
+ KASAN_SANITIZE_dumpstack.o				:= n
+ KASAN_SANITIZE_dumpstack_$(BITS).o			:= n
+diff -urN linux-5.0.2/arch/x86/kernel/module.c linux-5.0.2-pie/arch/x86/kernel/module.c
+--- linux-5.0.2/arch/x86/kernel/module.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/module.c	2019-03-16 10:50:57.105692388 -0400
+@@ -30,6 +30,7 @@
+ #include <linux/gfp.h>
+ #include <linux/jump_label.h>
+ #include <linux/random.h>
++#include <linux/sort.h>
+ 
+ #include <asm/text-patching.h>
+ #include <asm/page.h>
+@@ -77,6 +78,173 @@
+ }
+ #endif
+ 
++#ifdef CONFIG_X86_PIE
++static u64 find_got_kernel_entry(Elf64_Sym *sym, const Elf64_Rela *rela)
++{
++	u64 *pos;
++
++	for (pos = (u64 *)__start_got; pos < (u64 *)__end_got; pos++) {
++		if (*pos == sym->st_value)
++			return (u64)pos + rela->r_addend;
++	}
++
++	return 0;
++}
++
++static u64 module_emit_got_entry(struct module *mod, void *loc,
++				 const Elf64_Rela *rela, Elf64_Sym *sym)
++{
++	struct mod_got_sec *gotsec = &mod->arch.core;
++	u64 *got = (u64 *)gotsec->got->sh_addr;
++	int i = gotsec->got_num_entries;
++	u64 ret;
++
++	/* Check if we can use the kernel GOT */
++	ret = find_got_kernel_entry(sym, rela);
++	if (ret)
++		return ret;
++
++	got[i] = sym->st_value;
++
++	/*
++	 * Check if the entry we just created is a duplicate. Given that the
++	 * relocations are sorted, this will be the last entry we allocated.
++	 * (if one exists).
++	 */
++	if (i > 0 && got[i] == got[i - 2]) {
++		ret = (u64)&got[i - 1];
++	} else {
++		gotsec->got_num_entries++;
++		BUG_ON(gotsec->got_num_entries > gotsec->got_max_entries);
++		ret = (u64)&got[i];
++	}
++
++	return ret + rela->r_addend;
++}
++
++#define cmp_3way(a, b)	((a) < (b) ? -1 : (a) > (b))
++
++static int cmp_rela(const void *a, const void *b)
++{
++	const Elf64_Rela *x = a, *y = b;
++	int i;
++
++	/* sort by type, symbol index and addend */
++	i = cmp_3way(ELF64_R_TYPE(x->r_info), ELF64_R_TYPE(y->r_info));
++	if (i == 0)
++		i = cmp_3way(ELF64_R_SYM(x->r_info), ELF64_R_SYM(y->r_info));
++	if (i == 0)
++		i = cmp_3way(x->r_addend, y->r_addend);
++	return i;
++}
++
++static bool duplicate_rel(const Elf64_Rela *rela, int num)
++{
++	/*
++	 * Entries are sorted by type, symbol index and addend. That means
++	 * that, if a duplicate entry exists, it must be in the preceding
++	 * slot.
++	 */
++	return num > 0 && cmp_rela(rela + num, rela + num - 1) == 0;
++}
++
++static unsigned int count_gots(Elf64_Sym *syms, Elf64_Rela *rela, int num)
++{
++	unsigned int ret = 0;
++	Elf64_Sym *s;
++	int i;
++
++	for (i = 0; i < num; i++) {
++		switch (ELF64_R_TYPE(rela[i].r_info)) {
++		case R_X86_64_GOTPCREL:
++			s = syms + ELF64_R_SYM(rela[i].r_info);
++
++			/*
++			 * Use the kernel GOT when possible, else reserve a
++			 * custom one for this module.
++			 */
++			if (!duplicate_rel(rela, i) &&
++			    !find_got_kernel_entry(s, rela + i))
++				ret++;
++			break;
++		}
++	}
++	return ret;
++}
++
++/*
++ * Generate GOT entries for GOTPCREL relocations that do not exists in the
++ * kernel GOT. Based on arm64 module-plts implementation.
++ */
++int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
++			      char *secstrings, struct module *mod)
++{
++	unsigned long gots = 0;
++	Elf_Shdr *symtab = NULL;
++	Elf64_Sym *syms = NULL;
++	char *strings, *name;
++	int i;
++
++	/*
++	 * Find the empty .got section so we can expand it to store the PLT
++	 * entries. Record the symtab address as well.
++	 */
++	for (i = 0; i < ehdr->e_shnum; i++) {
++		if (!strcmp(secstrings + sechdrs[i].sh_name, ".got")) {
++			mod->arch.core.got = sechdrs + i;
++		} else if (sechdrs[i].sh_type == SHT_SYMTAB) {
++			symtab = sechdrs + i;
++			syms = (Elf64_Sym *)symtab->sh_addr;
++		}
++	}
++
++	if (!mod->arch.core.got) {
++		pr_err("%s: module GOT section missing\n", mod->name);
++		return -ENOEXEC;
++	}
++	if (!syms) {
++		pr_err("%s: module symtab section missing\n", mod->name);
++		return -ENOEXEC;
++	}
++
++	for (i = 0; i < ehdr->e_shnum; i++) {
++		Elf64_Rela *rels = (void *)ehdr + sechdrs[i].sh_offset;
++		int numrels = sechdrs[i].sh_size / sizeof(Elf64_Rela);
++
++		if (sechdrs[i].sh_type != SHT_RELA)
++			continue;
++
++		/* sort by type, symbol index and addend */
++		sort(rels, numrels, sizeof(Elf64_Rela), cmp_rela, NULL);
++
++		gots += count_gots(syms, rels, numrels);
++	}
++
++	mod->arch.core.got->sh_type = SHT_NOBITS;
++	mod->arch.core.got->sh_flags = SHF_ALLOC;
++	mod->arch.core.got->sh_addralign = L1_CACHE_BYTES;
++	mod->arch.core.got->sh_size = (gots + 1) * sizeof(u64);
++	mod->arch.core.got_num_entries = 0;
++	mod->arch.core.got_max_entries = gots;
++
++	/*
++	 * If a _GLOBAL_OFFSET_TABLE_ symbol exists, make it absolute for
++	 * modules to correctly reference it. Similar to s390 implementation.
++	 */
++	strings = (void *) ehdr + sechdrs[symtab->sh_link].sh_offset;
++	for (i = 0; i < symtab->sh_size/sizeof(Elf_Sym); i++) {
++		if (syms[i].st_shndx != SHN_UNDEF)
++			continue;
++		name = strings + syms[i].st_name;
++		if (!strcmp(name, "_GLOBAL_OFFSET_TABLE_")) {
++			syms[i].st_shndx = SHN_ABS;
++			break;
++		}
++	}
++	return 0;
++}
++#endif
++
+ void *module_alloc(unsigned long size)
+ {
+ 	void *p;
+@@ -190,16 +358,20 @@
+ 			if ((s64)val != *(s32 *)loc)
+ 				goto overflow;
+ 			break;
++#ifdef CONFIG_X86_PIE
++		case R_X86_64_GOTPCREL:
++			val = module_emit_got_entry(me, loc, rel + i, sym);
++			/* fallthrough */
++#endif
+ 		case R_X86_64_PC32:
+ 		case R_X86_64_PLT32:
+ 			if (*(u32 *)loc != 0)
+ 				goto invalid_relocation;
+ 			val -= (u64)loc;
+ 			*(u32 *)loc = val;
+-#if 0
+-			if ((s64)val != *(s32 *)loc)
++			if (IS_ENABLED(CONFIG_X86_PIE) &&
++			    (s64)val != *(s32 *)loc)
+ 				goto overflow;
+-#endif
+ 			break;
+ 		case R_X86_64_PC64:
+ 			if (*(u64 *)loc != 0)
+@@ -223,8 +395,7 @@
+ overflow:
+ 	pr_err("overflow in relocation type %d val %Lx\n",
+ 	       (int)ELF64_R_TYPE(rel[i].r_info), val);
+-	pr_err("`%s' likely not compiled with -mcmodel=kernel\n",
+-	       me->name);
++	pr_err("`%s' likely too far from the kernel\n", me->name);
+ 	return -ENOEXEC;
+ }
+ #endif
+diff -urN linux-5.0.2/arch/x86/kernel/module.lds linux-5.0.2-pie/arch/x86/kernel/module.lds
+--- linux-5.0.2/arch/x86/kernel/module.lds	1969-12-31 19:00:00.000000000 -0500
++++ linux-5.0.2-pie/arch/x86/kernel/module.lds	2019-03-16 10:50:57.105692388 -0400
+@@ -0,0 +1,3 @@
++SECTIONS {
++	.got (NOLOAD) : { BYTE(0) }
++}
+diff -urN linux-5.0.2/arch/x86/kernel/process.c linux-5.0.2-pie/arch/x86/kernel/process.c
+--- linux-5.0.2/arch/x86/kernel/process.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/process.c	2019-03-16 10:50:57.105692388 -0400
+@@ -90,6 +90,11 @@
+ DEFINE_PER_CPU(bool, __tss_limit_invalid);
+ EXPORT_PER_CPU_SYMBOL_GPL(__tss_limit_invalid);
+ 
++#ifdef CONFIG_X86_GLOBAL_STACKPROTECTOR
++unsigned long __stack_chk_guard __read_mostly;
++EXPORT_SYMBOL(__stack_chk_guard);
++#endif
++
+ /*
+  * this gets called so that we can store lazy state into memory and copy the
+  * current task into the new thread.
+diff -urN linux-5.0.2/arch/x86/kernel/relocate_kernel_64.S linux-5.0.2-pie/arch/x86/kernel/relocate_kernel_64.S
+--- linux-5.0.2/arch/x86/kernel/relocate_kernel_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/relocate_kernel_64.S	2019-03-16 10:50:57.097692208 -0400
+@@ -208,7 +208,7 @@
+ 	movq	%rax, %cr3
+ 	lea	PAGE_SIZE(%r8), %rsp
+ 	call	swap_pages
+-	movq	$virtual_mapped, %rax
++	movabsq	$virtual_mapped, %rax
+ 	pushq	%rax
+ 	ret
+ 
+diff -urN linux-5.0.2/arch/x86/kernel/setup_percpu.c linux-5.0.2-pie/arch/x86/kernel/setup_percpu.c
+--- linux-5.0.2/arch/x86/kernel/setup_percpu.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/setup_percpu.c	2019-03-16 10:50:57.097692208 -0400
+@@ -26,7 +26,7 @@
+ DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
+ EXPORT_PER_CPU_SYMBOL(cpu_number);
+ 
+-#ifdef CONFIG_X86_64
++#if defined(CONFIG_X86_64) && !defined(CONFIG_X86_PIE)
+ #define BOOT_PERCPU_OFFSET ((unsigned long)__per_cpu_load)
+ #else
+ #define BOOT_PERCPU_OFFSET 0
+@@ -40,6 +40,9 @@
+ };
+ EXPORT_SYMBOL(__per_cpu_offset);
+ 
++/* Used to calculate gs_base for each CPU */
++EXPORT_SYMBOL(__per_cpu_start);
++
+ /*
+  * On x86_64 symbols referenced from code should be reachable using
+  * 32bit relocations.  Reserve space for static percpu variables in
+diff -urN linux-5.0.2/arch/x86/kernel/vmlinux.lds.S linux-5.0.2-pie/arch/x86/kernel/vmlinux.lds.S
+--- linux-5.0.2/arch/x86/kernel/vmlinux.lds.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kernel/vmlinux.lds.S	2019-03-16 10:52:09.711265172 -0400
+@@ -222,9 +222,14 @@
+ 	/*
+ 	 * percpu offsets are zero-based on SMP.  PERCPU_VADDR() changes the
+ 	 * output PHDR, so the next output section - .init.text - should
+-	 * start another segment - init.
++	 * start another segment - init. For Position Independent Code, the
++	 * per-cpu section cannot be zero-based because everything is relative.
+ 	 */
++#ifdef CONFIG_X86_PIE
++	PERCPU_SECTION(INTERNODE_CACHE_BYTES)
++#else
+ 	PERCPU_VADDR(INTERNODE_CACHE_BYTES, 0, :percpu)
++#endif
+ 	ASSERT(SIZEOF(.data..percpu) < CONFIG_PHYSICAL_START,
+ 	       "per-CPU data too large - increase CONFIG_PHYSICAL_START")
+ #endif
+@@ -401,7 +406,11 @@
+  * Per-cpu symbols which need to be offset from __per_cpu_load
+  * for the boot processor.
+  */
++#ifdef CONFIG_X86_PIE
++#define INIT_PER_CPU(x) init_per_cpu__##x = x
++#else
+ #define INIT_PER_CPU(x) init_per_cpu__##x = x + __per_cpu_load
++#endif
+ INIT_PER_CPU(gdt_page);
+ INIT_PER_CPU(irq_stack_union);
+ 
+@@ -411,7 +420,7 @@
+ . = ASSERT((_end - _text <= KERNEL_IMAGE_SIZE),
+ 	   "kernel image bigger than KERNEL_IMAGE_SIZE");
+ 
+-#ifdef CONFIG_SMP
++#if defined(CONFIG_SMP) && !defined(CONFIG_X86_PIE)
+ . = ASSERT((irq_stack_union == 0),
+            "irq_stack_union is not at start of per-cpu area");
+ #endif
+diff -urN linux-5.0.2/arch/x86/kvm/svm.c linux-5.0.2-pie/arch/x86/kvm/svm.c
+--- linux-5.0.2/arch/x86/kvm/svm.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kvm/svm.c	2019-03-16 10:50:57.101692298 -0400
+@@ -706,12 +706,12 @@
+ 
+ static inline void clgi(void)
+ {
+-	asm volatile (__ex("clgi"));
++	asm volatile (__ex("clgi") : :);
+ }
+ 
+ static inline void stgi(void)
+ {
+-	asm volatile (__ex("stgi"));
++	asm volatile (__ex("stgi") : :);
+ }
+ 
+ static inline void invlpga(unsigned long addr, u32 asid)
+diff -urN linux-5.0.2/arch/x86/kvm/vmx/vmx.c linux-5.0.2-pie/arch/x86/kvm/vmx/vmx.c
+--- linux-5.0.2/arch/x86/kvm/vmx/vmx.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/kvm/vmx/vmx.c	2019-03-16 10:50:57.105692388 -0400
+@@ -2159,7 +2159,7 @@
+  */
+ static void kvm_cpu_vmxoff(void)
+ {
+-	asm volatile (__ex("vmxoff"));
++	asm volatile (__ex("vmxoff") :::);
+ 
+ 	intel_pt_handle_vmx(0);
+ 	cr4_clear_bits(X86_CR4_VMXE);
+diff -urN linux-5.0.2/arch/x86/lib/cmpxchg16b_emu.S linux-5.0.2-pie/arch/x86/lib/cmpxchg16b_emu.S
+--- linux-5.0.2/arch/x86/lib/cmpxchg16b_emu.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/lib/cmpxchg16b_emu.S	2019-03-16 10:50:57.097692208 -0400
+@@ -33,13 +33,13 @@
+ 	pushfq
+ 	cli
+ 
+-	cmpq PER_CPU_VAR((%rsi)), %rax
++	cmpq PER_CPU_VAR_ABS((%rsi)), %rax
+ 	jne .Lnot_same
+-	cmpq PER_CPU_VAR(8(%rsi)), %rdx
++	cmpq PER_CPU_VAR_ABS(8(%rsi)), %rdx
+ 	jne .Lnot_same
+ 
+-	movq %rbx, PER_CPU_VAR((%rsi))
+-	movq %rcx, PER_CPU_VAR(8(%rsi))
++	movq %rbx, PER_CPU_VAR_ABS((%rsi))
++	movq %rcx, PER_CPU_VAR_ABS(8(%rsi))
+ 
+ 	popfq
+ 	mov $1, %al
+diff -urN linux-5.0.2/arch/x86/Makefile linux-5.0.2-pie/arch/x86/Makefile
+--- linux-5.0.2/arch/x86/Makefile	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/Makefile	2019-03-16 10:50:57.109692478 -0400
+@@ -60,6 +60,8 @@
+ KBUILD_CFLAGS += -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
+ KBUILD_CFLAGS += $(call cc-option,-mno-avx,)
+ 
++stackglobal := $(call cc-option-yn, -mstack-protector-guard=global)
++
+ ifeq ($(CONFIG_X86_32),y)
+         BITS := 32
+         UTS_MACHINE := i386
+@@ -129,8 +131,62 @@
+         KBUILD_CFLAGS += $(cflags-y)
+ 
+         KBUILD_CFLAGS += -mno-red-zone
++ifdef CONFIG_X86_PIE
++        KBUILD_CFLAGS += -fPIE
++        KBUILD_LDFLAGS_MODULE += -T $(srctree)/arch/x86/kernel/module.lds
++
++        # Relax relocation in both CFLAGS and LDFLAGS to support older compilers
++        KBUILD_CFLAGS += $(call cc-option,-Wa$(comma)-mrelax-relocations=no)
++        LDFLAGS_vmlinux += $(call ld-option,--no-relax)
++        KBUILD_LDFLAGS_MODULE += $(call ld-option,--no-relax)
++
++        # Stack validation is not yet support due to self-referenced switches
++ifdef CONFIG_STACK_VALIDATION
++        $(warning CONFIG_STACK_VALIDATION is not yet supported for x86_64 pie \
++	        build.)
++        SKIP_STACK_VALIDATION := 1
++        export SKIP_STACK_VALIDATION
++endif
++
++ifndef CONFIG_CC_STACKPROTECTOR_NONE
++ifndef CONFIG_X86_GLOBAL_STACKPROTECTOR
++        stackseg-flag := -mstack-protector-guard-reg=%gs
++        ifeq ($(call cc-option-yn,$(stackseg-flag)),n)
++                # Try to enable global stack cookie if possible
++                ifeq ($(stackglobal), y)
++                        $(warning Cannot use CONFIG_CC_STACKPROTECTOR_* while \
++                                building a position independent kernel. \
++                                Default to global stack protector \
++                                (CONFIG_X86_GLOBAL_STACKPROTECTOR).)
++                        CONFIG_X86_GLOBAL_STACKPROTECTOR := y
++                        KBUILD_CFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
++                        KBUILD_AFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
++                else
++                        $(error echo Cannot use \
++                                CONFIG_CC_STACKPROTECTOR_(REGULAR|STRONG|AUTO) \
++                                while building a position independent binary. \
++                                Update your compiler or use \
++                                CONFIG_X86_GLOBAL_STACKPROTECTOR)
++                endif
++        else
++                KBUILD_CFLAGS += $(stackseg-flag)
++        endif
++endif
++endif
++
++else
+         KBUILD_CFLAGS += -mcmodel=kernel
+ endif
++endif
++
++ifdef CONFIG_X86_GLOBAL_STACKPROTECTOR
++        ifeq ($(stackglobal), n)
++                $(error Cannot use CONFIG_X86_GLOBAL_STACKPROTECTOR: \
++                        -mstack-protector-guard=global not supported \
++                        by compiler)
++        endif
++        KBUILD_CFLAGS += -mstack-protector-guard=global
++endif
+ 
+ ifdef CONFIG_X86_X32
+ 	x32_ld_ok := $(call try-run,\
+diff -urN linux-5.0.2/arch/x86/mm/dump_pagetables.c linux-5.0.2-pie/arch/x86/mm/dump_pagetables.c
+--- linux-5.0.2/arch/x86/mm/dump_pagetables.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/mm/dump_pagetables.c	2019-03-16 10:50:57.105692388 -0400
+@@ -104,7 +104,7 @@
+ 	[EFI_END_NR]		= { EFI_VA_END,		"EFI Runtime Services" },
+ #endif
+ 	[HIGH_KERNEL_NR]	= { __START_KERNEL_map,	"High Kernel Mapping" },
+-	[MODULES_VADDR_NR]	= { MODULES_VADDR,	"Modules" },
++	[MODULES_VADDR_NR]	= { 0/*MODULES_VADDR*/,	"Modules" },
+ 	[MODULES_END_NR]	= { MODULES_END,	"End Modules" },
+ 	[FIXADDR_START_NR]	= { FIXADDR_START,	"Fixmap Area" },
+ 	[END_OF_SPACE_NR]	= { -1,			NULL }
+@@ -623,6 +623,7 @@
+ 	address_markers[KASAN_SHADOW_START_NR].start_address = KASAN_SHADOW_START;
+ 	address_markers[KASAN_SHADOW_END_NR].start_address = KASAN_SHADOW_END;
+ #endif
++	address_markers[MODULES_VADDR_NR].start_address = MODULES_VADDR;
+ #endif
+ #ifdef CONFIG_X86_32
+ 	address_markers[VMALLOC_START_NR].start_address = VMALLOC_START;
+diff -urN linux-5.0.2/arch/x86/platform/pvh/head.S linux-5.0.2-pie/arch/x86/platform/pvh/head.S
+--- linux-5.0.2/arch/x86/platform/pvh/head.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/platform/pvh/head.S	2019-03-16 10:50:57.101692298 -0400
+@@ -103,8 +103,8 @@
+ 	call xen_prepare_pvh
+ 
+ 	/* startup_64 expects boot_params in %rsi. */
+-	mov $_pa(pvh_bootparams), %rsi
+-	mov $_pa(startup_64), %rax
++	movabs $_pa(pvh_bootparams), %rsi
++	movabs $_pa(startup_64), %rax
+ 	jmp *%rax
+ 
+ #else /* CONFIG_X86_64 */
+@@ -150,10 +150,16 @@
+ 
+ 	.section ".init.data","aw"
+ 	.balign 8
++	/*
++	 * Use an ASM_PTR (quad on x64) for _pa(gdt_start) because PIE requires
++	 * a pointer size storage value before applying the relocation. On
++	 * 32-bit _ASM_PTR will be a long which is aligned the space needed for
++	 * relocation.
++	 */
+ gdt:
+ 	.word gdt_end - gdt_start
+-	.long _pa(gdt_start)
+-	.word 0
++	_ASM_PTR _pa(gdt_start)
++	.balign 8
+ gdt_start:
+ 	.quad 0x0000000000000000            /* NULL descriptor */
+ #ifdef CONFIG_X86_64
+diff -urN linux-5.0.2/arch/x86/power/hibernate_asm_64.S linux-5.0.2-pie/arch/x86/power/hibernate_asm_64.S
+--- linux-5.0.2/arch/x86/power/hibernate_asm_64.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/power/hibernate_asm_64.S	2019-03-16 10:50:57.097692208 -0400
+@@ -24,7 +24,7 @@
+ #include <asm/frame.h>
+ 
+ ENTRY(swsusp_arch_suspend)
+-	movq	$saved_context, %rax
++	leaq	saved_context(%rip), %rax
+ 	movq	%rsp, pt_regs_sp(%rax)
+ 	movq	%rbp, pt_regs_bp(%rax)
+ 	movq	%rsi, pt_regs_si(%rax)
+@@ -115,7 +115,7 @@
+ 	movq	%rax, %cr4;  # turn PGE back on
+ 
+ 	/* We don't restore %rax, it must be 0 anyway */
+-	movq	$saved_context, %rax
++	leaq	saved_context(%rip), %rax
+ 	movq	pt_regs_sp(%rax), %rsp
+ 	movq	pt_regs_bp(%rax), %rbp
+ 	movq	pt_regs_si(%rax), %rsi
+diff -urN linux-5.0.2/arch/x86/tools/relocs.c linux-5.0.2-pie/arch/x86/tools/relocs.c
+--- linux-5.0.2/arch/x86/tools/relocs.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/tools/relocs.c	2019-03-16 10:50:57.109692478 -0400
+@@ -13,8 +13,14 @@
+ 
+ static Elf_Ehdr ehdr;
+ 
++#if ELF_BITS == 64
++typedef uint64_t rel_off_t;
++#else
++typedef uint32_t rel_off_t;
++#endif
++
+ struct relocs {
+-	uint32_t	*offset;
++	rel_off_t	*offset;
+ 	unsigned long	count;
+ 	unsigned long	size;
+ };
+@@ -32,6 +38,7 @@
+ 	Elf_Sym        *symtab;
+ 	Elf_Rel        *reltab;
+ 	char           *strtab;
++	Elf_Addr       *got;
+ };
+ static struct section *secs;
+ 
+@@ -295,6 +302,36 @@
+ 	return 0;
+ }
+ 
++static Elf_Sym *sym_lookup_addr(Elf_Addr addr, const char **name)
++{
++	int i;
++
++	for (i = 0; i < ehdr.e_shnum; i++) {
++		struct section *sec = &secs[i];
++		long nsyms;
++		Elf_Sym *symtab;
++		Elf_Sym *sym;
++
++		if (sec->shdr.sh_type != SHT_SYMTAB)
++			continue;
++
++		nsyms = sec->shdr.sh_size/sizeof(Elf_Sym);
++		symtab = sec->symtab;
++
++		for (sym = symtab; --nsyms >= 0; sym++) {
++			if (sym->st_value == addr) {
++				if (name) {
++					*name = sym_name(sec->link->strtab,
++							 sym);
++				}
++				return sym;
++			}
++		}
++	}
++	return 0;
++}
++
++
+ #if BYTE_ORDER == LITTLE_ENDIAN
+ #define le16_to_cpu(val) (val)
+ #define le32_to_cpu(val) (val)
+@@ -515,6 +552,35 @@
+ 	}
+ }
+ 
++static void read_got(FILE *fp)
++{
++	int i;
++
++	for (i = 0; i < ehdr.e_shnum; i++) {
++		struct section *sec = &secs[i];
++
++		sec->got = NULL;
++		if (sec->shdr.sh_type != SHT_PROGBITS ||
++		    strcmp(sec_name(i), ".got")) {
++			continue;
++		}
++		sec->got = malloc(sec->shdr.sh_size);
++		if (!sec->got) {
++			die("malloc of %d bytes for got failed\n",
++				sec->shdr.sh_size);
++		}
++		if (fseek(fp, sec->shdr.sh_offset, SEEK_SET) < 0) {
++			die("Seek to %d failed: %s\n",
++				sec->shdr.sh_offset, strerror(errno));
++		}
++		if (fread(sec->got, 1, sec->shdr.sh_size, fp)
++		    != sec->shdr.sh_size) {
++			die("Cannot read got: %s\n",
++				strerror(errno));
++		}
++	}
++}
++
+ 
+ static void print_absolute_symbols(void)
+ {
+@@ -630,7 +696,7 @@
+ 		printf("\n");
+ }
+ 
+-static void add_reloc(struct relocs *r, uint32_t offset)
++static void add_reloc(struct relocs *r, rel_off_t offset)
+ {
+ 	if (r->count == r->size) {
+ 		unsigned long newsize = r->size + 50000;
+@@ -645,6 +711,32 @@
+ 	r->offset[r->count++] = offset;
+ }
+ 
++/*
++ * The linker does not generate relocations for the GOT for the kernel.
++ * If a GOT is found, simulate the relocations that should have been included.
++ */
++static void walk_got_table(int (*process)(struct section *sec, Elf_Rel *rel,
++					  Elf_Sym *sym, const char *symname),
++			   struct section *sec)
++{
++	int i;
++	Elf_Addr entry;
++	Elf_Sym *sym;
++	const char *symname;
++	Elf_Rel rel;
++
++	for (i = 0; i < sec->shdr.sh_size/sizeof(Elf_Addr); i++) {
++		entry = sec->got[i];
++		sym = sym_lookup_addr(entry, &symname);
++		if (!sym)
++			die("Could not found got symbol for entry %d\n", i);
++		rel.r_offset = sec->shdr.sh_addr + i * sizeof(Elf_Addr);
++		rel.r_info = ELF_BITS == 64 ? R_X86_64_GLOB_DAT
++			     : R_386_GLOB_DAT;
++		process(sec, &rel, sym, symname);
++	}
++}
++
+ static void walk_relocs(int (*process)(struct section *sec, Elf_Rel *rel,
+ 			Elf_Sym *sym, const char *symname))
+ {
+@@ -658,6 +750,8 @@
+ 		struct section *sec = &secs[i];
+ 
+ 		if (sec->shdr.sh_type != SHT_REL_TYPE) {
++			if (sec->got)
++				walk_got_table(process, sec);
+ 			continue;
+ 		}
+ 		sec_symtab  = sec->link;
+@@ -749,6 +843,16 @@
+ 		strncmp(symname, "init_per_cpu_", 13);
+ }
+ 
++/*
++ * Check if the 32-bit relocation is within the xenpvh 32-bit code.
++ * If so, ignores it.
++ */
++static int is_in_xenpvh_assembly(Elf_Addr offset)
++{
++	Elf_Sym *sym = sym_lookup("pvh_start_xen");
++	return sym && (offset >= sym->st_value) &&
++		(offset < (sym->st_value + sym->st_size));
++}
+ 
+ static int do_reloc64(struct section *sec, Elf_Rel *rel, ElfW(Sym) *sym,
+ 		      const char *symname)
+@@ -767,6 +871,7 @@
+ 		offset += per_cpu_load_addr;
+ 
+ 	switch (r_type) {
++	case R_X86_64_GOTPCREL:
+ 	case R_X86_64_NONE:
+ 		/* NONE can be ignored. */
+ 		break;
+@@ -820,8 +925,12 @@
+ 		 * the relocations are processed.
+ 		 * Make sure that the offset will fit.
+ 		 */
+-		if ((int32_t)offset != (int64_t)offset)
++		if (r_type != R_X86_64_64 &&
++		    (int32_t)offset != (int64_t)offset) {
++			if (is_in_xenpvh_assembly(offset))
++				break;
+ 			die("Relocation offset doesn't fit in 32 bits\n");
++		}
+ 
+ 		if (r_type == R_X86_64_64)
+ 			add_reloc(&relocs64, offset);
+@@ -829,6 +938,10 @@
+ 			add_reloc(&relocs32, offset);
+ 		break;
+ 
++	case R_X86_64_GLOB_DAT:
++		add_reloc(&relocs64, offset);
++		break;
++
+ 	default:
+ 		die("Unsupported relocation type: %s (%d)\n",
+ 		    rel_type(r_type), r_type);
+@@ -968,26 +1081,49 @@
+ 	qsort(r->offset, r->count, sizeof(r->offset[0]), cmp_relocs);
+ }
+ 
+-static int write32(uint32_t v, FILE *f)
++static int write32(rel_off_t rel, FILE *f)
+ {
+-	unsigned char buf[4];
++	unsigned char buf[sizeof(uint32_t)];
++	uint32_t v = (uint32_t)rel;
+ 
+ 	put_unaligned_le32(v, buf);
+-	return fwrite(buf, 1, 4, f) == 4 ? 0 : -1;
++	return fwrite(buf, 1, sizeof(buf), f) == sizeof(buf) ? 0 : -1;
+ }
+ 
+-static int write32_as_text(uint32_t v, FILE *f)
++static int write32_as_text(rel_off_t rel, FILE *f)
+ {
++	uint32_t v = (uint32_t)rel;
+ 	return fprintf(f, "\t.long 0x%08"PRIx32"\n", v) > 0 ? 0 : -1;
+ }
+ 
+-static void emit_relocs(int as_text, int use_real_mode)
++static int write64(rel_off_t rel, FILE *f)
++{
++	unsigned char buf[sizeof(uint64_t)];
++	uint64_t v = (uint64_t)rel;
++
++	put_unaligned_le64(v, buf);
++	return fwrite(buf, 1, sizeof(buf), f) == sizeof(buf) ? 0 : -1;
++}
++
++static int write64_as_text(rel_off_t rel, FILE *f)
++{
++	uint64_t v = (uint64_t)rel;
++
++	return fprintf(f, "\t.quad 0x%016"PRIx64"\n", v) > 0 ? 0 : -1;
++}
++
++static void emit_relocs(int as_text, int use_real_mode, int use_large_reloc)
+ {
+ 	int i;
+-	int (*write_reloc)(uint32_t, FILE *) = write32;
++	int (*write_reloc)(rel_off_t rel, FILE *f);
+ 	int (*do_reloc)(struct section *sec, Elf_Rel *rel, Elf_Sym *sym,
+ 			const char *symname);
+ 
++	if (use_large_reloc)
++		write_reloc = write64;
++	else
++		write_reloc = write32;
++
+ #if ELF_BITS == 64
+ 	if (!use_real_mode)
+ 		do_reloc = do_reloc64;
+@@ -998,6 +1134,9 @@
+ 		do_reloc = do_reloc32;
+ 	else
+ 		do_reloc = do_reloc_real;
++
++	/* Large relocations only for 64-bit */
++	use_large_reloc = 0;
+ #endif
+ 
+ 	/* Collect up the relocations */
+@@ -1021,8 +1160,13 @@
+ 		 * gas will like.
+ 		 */
+ 		printf(".section \".data.reloc\",\"a\"\n");
+-		printf(".balign 4\n");
+-		write_reloc = write32_as_text;
++		if (use_large_reloc) {
++			printf(".balign 8\n");
++			write_reloc = write64_as_text;
++		} else {
++			printf(".balign 4\n");
++			write_reloc = write32_as_text;
++		}
+ 	}
+ 
+ 	if (use_real_mode) {
+@@ -1090,7 +1234,7 @@
+ 
+ void process(FILE *fp, int use_real_mode, int as_text,
+ 	     int show_absolute_syms, int show_absolute_relocs,
+-	     int show_reloc_info)
++	     int show_reloc_info, int use_large_reloc)
+ {
+ 	regex_init(use_real_mode);
+ 	read_ehdr(fp);
+@@ -1098,6 +1242,7 @@
+ 	read_strtabs(fp);
+ 	read_symtabs(fp);
+ 	read_relocs(fp);
++	read_got(fp);
+ 	if (ELF_BITS == 64)
+ 		percpu_init();
+ 	if (show_absolute_syms) {
+@@ -1112,5 +1257,5 @@
+ 		print_reloc_info();
+ 		return;
+ 	}
+-	emit_relocs(as_text, use_real_mode);
++	emit_relocs(as_text, use_real_mode, use_large_reloc);
+ }
+diff -urN linux-5.0.2/arch/x86/tools/relocs_common.c linux-5.0.2-pie/arch/x86/tools/relocs_common.c
+--- linux-5.0.2/arch/x86/tools/relocs_common.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/tools/relocs_common.c	2019-03-16 10:50:57.109692478 -0400
+@@ -12,14 +12,14 @@
+ 
+ static void usage(void)
+ {
+-	die("relocs [--abs-syms|--abs-relocs|--reloc-info|--text|--realmode]" \
+-	    " vmlinux\n");
++	die("relocs [--abs-syms|--abs-relocs|--reloc-info|--text|--realmode|" \
++	    "--large-reloc]  vmlinux\n");
+ }
+ 
+ int main(int argc, char **argv)
+ {
+ 	int show_absolute_syms, show_absolute_relocs, show_reloc_info;
+-	int as_text, use_real_mode;
++	int as_text, use_real_mode, use_large_reloc;
+ 	const char *fname;
+ 	FILE *fp;
+ 	int i;
+@@ -30,6 +30,7 @@
+ 	show_reloc_info = 0;
+ 	as_text = 0;
+ 	use_real_mode = 0;
++	use_large_reloc = 0;
+ 	fname = NULL;
+ 	for (i = 1; i < argc; i++) {
+ 		char *arg = argv[i];
+@@ -54,6 +55,10 @@
+ 				use_real_mode = 1;
+ 				continue;
+ 			}
++			if (strcmp(arg, "--large-reloc") == 0) {
++				use_large_reloc = 1;
++				continue;
++			}
+ 		}
+ 		else if (!fname) {
+ 			fname = arg;
+@@ -75,11 +80,11 @@
+ 	if (e_ident[EI_CLASS] == ELFCLASS64)
+ 		process_64(fp, use_real_mode, as_text,
+ 			   show_absolute_syms, show_absolute_relocs,
+-			   show_reloc_info);
++			   show_reloc_info, use_large_reloc);
+ 	else
+ 		process_32(fp, use_real_mode, as_text,
+ 			   show_absolute_syms, show_absolute_relocs,
+-			   show_reloc_info);
++			   show_reloc_info, use_large_reloc);
+ 	fclose(fp);
+ 	return 0;
+ }
+diff -urN linux-5.0.2/arch/x86/tools/relocs.h linux-5.0.2-pie/arch/x86/tools/relocs.h
+--- linux-5.0.2/arch/x86/tools/relocs.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/tools/relocs.h	2019-03-16 10:50:57.109692478 -0400
+@@ -31,8 +31,8 @@
+ 
+ void process_32(FILE *fp, int use_real_mode, int as_text,
+ 		int show_absolute_syms, int show_absolute_relocs,
+-		int show_reloc_info);
++		int show_reloc_info, int use_large_reloc);
+ void process_64(FILE *fp, int use_real_mode, int as_text,
+ 		int show_absolute_syms, int show_absolute_relocs,
+-		int show_reloc_info);
++		int show_reloc_info, int use_large_reloc);
+ #endif /* RELOCS_H */
+diff -urN linux-5.0.2/arch/x86/xen/xen-asm.S linux-5.0.2-pie/arch/x86/xen/xen-asm.S
+--- linux-5.0.2/arch/x86/xen/xen-asm.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/xen/xen-asm.S	2019-03-16 10:50:57.097692208 -0400
+@@ -21,7 +21,7 @@
+ ENTRY(xen_irq_enable_direct)
+ 	FRAME_BEGIN
+ 	/* Unmask events */
+-	movb $0, PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_mask
++	movb $0, PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_mask)
+ 
+ 	/*
+ 	 * Preempt here doesn't matter because that will deal with any
+@@ -30,7 +30,7 @@
+ 	 */
+ 
+ 	/* Test for pending */
+-	testb $0xff, PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_pending
++	testb $0xff, PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_pending)
+ 	jz 1f
+ 
+ 	call check_events
+@@ -45,7 +45,7 @@
+  * non-zero.
+  */
+ ENTRY(xen_irq_disable_direct)
+-	movb $1, PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_mask
++	movb $1, PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_mask)
+ 	ret
+ ENDPROC(xen_irq_disable_direct)
+ 
+@@ -59,7 +59,7 @@
+  * x86 use opposite senses (mask vs enable).
+  */
+ ENTRY(xen_save_fl_direct)
+-	testb $0xff, PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_mask
++	testb $0xff, PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_mask)
+ 	setz %ah
+ 	addb %ah, %ah
+ 	ret
+@@ -80,7 +80,7 @@
+ #else
+ 	testb $X86_EFLAGS_IF>>8, %ah
+ #endif
+-	setz PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_mask
++	setz PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_mask)
+ 	/*
+ 	 * Preempt here doesn't matter because that will deal with any
+ 	 * pending interrupts.  The pending check may end up being run
+@@ -88,7 +88,7 @@
+ 	 */
+ 
+ 	/* check for unmasked and pending */
+-	cmpw $0x0001, PER_CPU_VAR(xen_vcpu_info) + XEN_vcpu_info_pending
++	cmpw $0x0001, PER_CPU_VAR(xen_vcpu_info + XEN_vcpu_info_pending)
+ 	jnz 1f
+ 	call check_events
+ 1:
+diff -urN linux-5.0.2/arch/x86/xen/xen-head.S linux-5.0.2-pie/arch/x86/xen/xen-head.S
+--- linux-5.0.2/arch/x86/xen/xen-head.S	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/arch/x86/xen/xen-head.S	2019-03-16 10:50:57.101692298 -0400
+@@ -28,14 +28,15 @@
+ 
+ 	/* Clear .bss */
+ 	xor %eax,%eax
+-	mov $__bss_start, %_ASM_DI
+-	mov $__bss_stop, %_ASM_CX
++	_ASM_MOVABS $__bss_start, %_ASM_DI
++	_ASM_MOVABS $__bss_stop, %_ASM_CX
+ 	sub %_ASM_DI, %_ASM_CX
+ 	shr $__ASM_SEL(2, 3), %_ASM_CX
+ 	rep __ASM_SIZE(stos)
+ 
+-	mov %_ASM_SI, xen_start_info
+-	mov $init_thread_union+THREAD_SIZE, %_ASM_SP
++	_ASM_MOVABS $xen_start_info, %_ASM_AX
++	_ASM_MOV %_ASM_SI, (%_ASM_AX)
++	_ASM_MOVABS $init_thread_union+THREAD_SIZE, %_ASM_SP
+ 
+ #ifdef CONFIG_X86_64
+ 	/* Set up %gs.
+@@ -46,7 +47,7 @@
+ 	 * init data section till per cpu areas are set up.
+ 	 */
+ 	movl	$MSR_GS_BASE,%ecx
+-	movq	$INIT_PER_CPU_VAR(irq_stack_union),%rax
++	movabsq	$INIT_PER_CPU_VAR(irq_stack_union),%rax
+ 	cdq
+ 	wrmsr
+ #endif
+diff -urN linux-5.0.2/Documentation/x86/x86_64/mm.txt linux-5.0.2-pie/Documentation/x86/x86_64/mm.txt
+--- linux-5.0.2/Documentation/x86/x86_64/mm.txt	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/Documentation/x86/x86_64/mm.txt	2019-03-16 10:50:57.105692388 -0400
+@@ -151,3 +151,6 @@
+ 
+ For both 4- and 5-level layouts, the STACKLEAK_POISON value in the last 2MB
+ hole: ffffffffffff4111
++
++If CONFIG_DYNAMIC_MODULE_BASE is enabled, the module section follows the end of
++the mapped kernel.
+diff -urN linux-5.0.2/drivers/base/firmware_loader/main.c linux-5.0.2-pie/drivers/base/firmware_loader/main.c
+--- linux-5.0.2/drivers/base/firmware_loader/main.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/drivers/base/firmware_loader/main.c	2019-03-16 10:50:57.101692298 -0400
+@@ -94,8 +94,8 @@
+ 
+ #ifdef CONFIG_FW_LOADER
+ 
+-extern struct builtin_fw __start_builtin_fw[];
+-extern struct builtin_fw __end_builtin_fw[];
++extern struct builtin_fw __start_builtin_fw[] __default_visibility;
++extern struct builtin_fw __end_builtin_fw[] __default_visibility;
+ 
+ static void fw_copy_to_prealloc_buf(struct firmware *fw,
+ 				    void *buf, size_t size)
+diff -urN linux-5.0.2/include/asm-generic/sections.h linux-5.0.2-pie/include/asm-generic/sections.h
+--- linux-5.0.2/include/asm-generic/sections.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/include/asm-generic/sections.h	2019-03-16 10:50:57.101692298 -0400
+@@ -32,6 +32,9 @@
+  *	__softirqentry_text_start, __softirqentry_text_end
+  *	__start_opd, __end_opd
+  */
++#ifdef CONFIG_DEFAULT_HIDDEN_SYMS
++#pragma GCC visibility push(default)
++#endif
+ extern char _text[], _stext[], _etext[];
+ extern char _data[], _sdata[], _edata[];
+ extern char __bss_start[], __bss_stop[];
+@@ -49,6 +52,9 @@
+ 
+ /* Start and end of .ctors section - used for constructor calls. */
+ extern char __ctors_start[], __ctors_end[];
++#ifdef CONFIG_DEFAULT_HIDDEN_SYMS
++#pragma GCC visibility pop
++#endif
+ 
+ /* Start and end of .opd section - used for function descriptors. */
+ extern char __start_opd[], __end_opd[];
+diff -urN linux-5.0.2/include/asm-generic/vmlinux.lds.h linux-5.0.2-pie/include/asm-generic/vmlinux.lds.h
+--- linux-5.0.2/include/asm-generic/vmlinux.lds.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/include/asm-generic/vmlinux.lds.h	2019-03-16 10:50:57.105692388 -0400
+@@ -323,6 +323,17 @@
+ 	__end_ro_after_init = .;
+ #endif
+ 
++#ifdef CONFIG_X86_PIE
++#define RO_GOT_X86							\
++	.got        : AT(ADDR(.got) - LOAD_OFFSET) {			\
++		__start_got = .;					\
++		*(.got);						\
++		__end_got = .;						\
++	}
++#else
++#define RO_GOT_X86
++#endif
++
+ /*
+  * Read only Data
+  */
+@@ -379,6 +390,7 @@
+ 		__end_builtin_fw = .;					\
+ 	}								\
+ 									\
++	RO_GOT_X86							\
+ 	TRACEDATA							\
+ 									\
+ 	/* Kernel symbol table: Normal symbols */			\
+diff -urN linux-5.0.2/include/linux/compiler.h linux-5.0.2-pie/include/linux/compiler.h
+--- linux-5.0.2/include/linux/compiler.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/include/linux/compiler.h	2019-03-16 10:50:57.101692298 -0400
+@@ -283,6 +283,13 @@
+ 	__u.__val;					\
+ })
+ 
++#ifdef CONFIG_DEFAULT_HIDDEN_SYMS
++#pragma GCC visibility push(hidden)
++#define __default_visibility  __attribute__((visibility ("default")))
++#else
++#define __default_visibility
++#endif
++
+ #endif /* __KERNEL__ */
+ 
+ /*
+diff -urN linux-5.0.2/init/Kconfig linux-5.0.2-pie/init/Kconfig
+--- linux-5.0.2/init/Kconfig	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/init/Kconfig	2019-03-16 10:50:57.101692298 -0400
+@@ -1464,7 +1464,7 @@
+ config KALLSYMS_ABSOLUTE_PERCPU
+ 	bool
+ 	depends on KALLSYMS
+-	default X86_64 && SMP
++	default X86_64 && SMP && !X86_PIE
+ 
+ config KALLSYMS_BASE_RELATIVE
+ 	bool
+@@ -1790,6 +1790,13 @@
+ config TRACEPOINTS
+ 	bool
+ 
++#
++# Default to hidden visibility for all symbols.
++# Useful for Position Independent Code to reduce global references.
++#
++config DEFAULT_HIDDEN_SYMS
++	bool
++
+ endmenu		# General setup
+ 
+ source "arch/Kconfig"
+@@ -2039,6 +2046,13 @@
+ 	  inform it as to what tags are to be expected in a stream and what
+ 	  functions to call on what tags.
+ 
++config WEAK_PROVIDE_HIDDEN
++	bool
++	help
++	  Generate linker script PROVIDE_HIDDEN entries for all weak symbols. It
++	  allows to prevent non-PIE code being replaced by the linker if the
++	  emit-relocs option is used instead of PIE (useful for x86_64 PIE).
++
+ source "kernel/Kconfig.locks"
+ 
+ config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
+diff -urN linux-5.0.2/kernel/kallsyms.c linux-5.0.2-pie/kernel/kallsyms.c
+--- linux-5.0.2/kernel/kallsyms.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/kernel/kallsyms.c	2019-03-16 10:50:57.101692298 -0400
+@@ -29,24 +29,24 @@
+  * These will be re-linked against their real values
+  * during the second link stage.
+  */
+-extern const unsigned long kallsyms_addresses[] __weak;
+-extern const int kallsyms_offsets[] __weak;
+-extern const u8 kallsyms_names[] __weak;
++extern const unsigned long kallsyms_addresses[] __weak __default_visibility;
++extern const int kallsyms_offsets[] __weak __default_visibility;
++extern const u8 kallsyms_names[] __weak __default_visibility;
+ 
+ /*
+  * Tell the compiler that the count isn't in the small data section if the arch
+  * has one (eg: FRV).
+  */
+ extern const unsigned int kallsyms_num_syms
+-__attribute__((weak, section(".rodata")));
++__attribute__((weak, section(".rodata"))) __default_visibility;
+ 
+ extern const unsigned long kallsyms_relative_base
+-__attribute__((weak, section(".rodata")));
++__attribute__((weak, section(".rodata"))) __default_visibility;
+ 
+-extern const u8 kallsyms_token_table[] __weak;
+-extern const u16 kallsyms_token_index[] __weak;
++extern const u8 kallsyms_token_table[] __weak __default_visibility;
++extern const u16 kallsyms_token_index[] __weak __default_visibility;
+ 
+-extern const unsigned int kallsyms_markers[] __weak;
++extern const unsigned int kallsyms_markers[] __weak __default_visibility;
+ 
+ /*
+  * Expand a compressed symbol data into the resulting uncompressed string,
+diff -urN linux-5.0.2/kernel/trace/trace.h linux-5.0.2-pie/kernel/trace/trace.h
+--- linux-5.0.2/kernel/trace/trace.h	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/kernel/trace/trace.h	2019-03-16 10:50:57.101692298 -0400
+@@ -1809,8 +1809,8 @@
+ 				      int enable, int soft_disable);
+ extern int tracing_alloc_snapshot(void);
+ 
+-extern const char *__start___trace_bprintk_fmt[];
+-extern const char *__stop___trace_bprintk_fmt[];
++extern const char *__start___trace_bprintk_fmt[] __default_visibility;
++extern const char *__stop___trace_bprintk_fmt[] __default_visibility;
+ 
+ extern const char *__start___tracepoint_str[];
+ extern const char *__stop___tracepoint_str[];
+diff -urN linux-5.0.2/lib/dynamic_debug.c linux-5.0.2-pie/lib/dynamic_debug.c
+--- linux-5.0.2/lib/dynamic_debug.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/lib/dynamic_debug.c	2019-03-16 10:50:57.101692298 -0400
+@@ -37,8 +37,8 @@
+ #include <linux/device.h>
+ #include <linux/netdevice.h>
+ 
+-extern struct _ddebug __start___verbose[];
+-extern struct _ddebug __stop___verbose[];
++extern struct _ddebug __start___verbose[] __default_visibility;
++extern struct _ddebug __stop___verbose[] __default_visibility;
+ 
+ struct ddebug_table {
+ 	struct list_head link;
+diff -urN linux-5.0.2/Makefile linux-5.0.2-pie/Makefile
+--- linux-5.0.2/Makefile	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/Makefile	2019-03-16 10:50:57.109692478 -0400
+@@ -1106,6 +1106,8 @@
+ PHONY += prepare-objtool
+ prepare-objtool: $(objtool_target)
+ ifeq ($(SKIP_STACK_VALIDATION),1)
++# CONFIG_STACK_VALIDATION is not yet support by CONFIG_X86_PIE and warning is displayed before.
++ifndef CONFIG_X86_PIE
+ ifdef CONFIG_UNWINDER_ORC
+ 	@echo "error: Cannot generate ORC metadata for CONFIG_UNWINDER_ORC=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+ 	@false
+@@ -1113,6 +1115,7 @@
+ 	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+ endif
+ endif
++endif
+ 
+ # Generate some files
+ # ---------------------------------------------------------------------------
+diff -urN linux-5.0.2/scripts/link-vmlinux.sh linux-5.0.2-pie/scripts/link-vmlinux.sh
+--- linux-5.0.2/scripts/link-vmlinux.sh	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/scripts/link-vmlinux.sh	2019-03-16 10:50:57.101692298 -0400
+@@ -142,6 +142,17 @@
+ 	${CC} ${aflags} -c -o ${2} ${afile}
+ }
+ 
++gen_weak_provide_hidden()
++{
++        if [ -n "${CONFIG_WEAK_PROVIDE_HIDDEN}" ]; then
++                local pattern="s/^\s\+ w \(\w\+\)$/PROVIDE_HIDDEN(\1 = .);/gp"
++                echo -e "SECTIONS {\n. = _end;" > .tmp_vmlinux_hiddenld
++                ${NM} ${1} | sed -n "${pattern}" >> .tmp_vmlinux_hiddenld
++                echo "}" >> .tmp_vmlinux_hiddenld
++                LDFLAGS_vmlinux="${LDFLAGS_vmlinux} -T .tmp_vmlinux_hiddenld"
++        fi
++}
++
+ # Create map file with all symbols from ${1}
+ # See mksymap for additional details
+ mksysmap()
+@@ -226,6 +237,9 @@
+ # modpost vmlinux.o to check for section mismatches
+ ${MAKE} -f "${srctree}/scripts/Makefile.modpost" vmlinux.o
+ 
++# Generate weak linker script
++gen_weak_provide_hidden vmlinux.o
++
+ kallsymso=""
+ kallsyms_vmlinux=""
+ if [ -n "${CONFIG_KALLSYMS}" ]; then
+diff -urN linux-5.0.2/scripts/recordmcount.c linux-5.0.2-pie/scripts/recordmcount.c
+--- linux-5.0.2/scripts/recordmcount.c	2019-03-13 17:01:32.000000000 -0400
++++ linux-5.0.2-pie/scripts/recordmcount.c	2019-03-16 10:50:57.105692388 -0400
+@@ -171,33 +171,9 @@
+ 	return addr;
+ }
+ 
+-static unsigned char ideal_nop5_x86_64[5] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
+-static unsigned char ideal_nop5_x86_32[5] = { 0x3e, 0x8d, 0x74, 0x26, 0x00 };
+-static unsigned char *ideal_nop;
+-
+ static char rel_type_nop;
+-
+ static int (*make_nop)(void *map, size_t const offset);
+-
+-static int make_nop_x86(void *map, size_t const offset)
+-{
+-	uint32_t *ptr;
+-	unsigned char *op;
+-
+-	/* Confirm we have 0xe8 0x0 0x0 0x0 0x0 */
+-	ptr = map + offset;
+-	if (*ptr != 0)
+-		return -1;
+-
+-	op = map + offset - 1;
+-	if (*op != 0xe8)
+-		return -1;
+-
+-	/* convert to nop */
+-	ulseek(fd_map, offset - 1, SEEK_SET);
+-	uwrite(fd_map, ideal_nop, 5);
+-	return 0;
+-}
++static unsigned char *ideal_nop;
+ 
+ static unsigned char ideal_nop4_arm_le[4] = { 0x00, 0x00, 0xa0, 0xe1 }; /* mov r0, r0 */
+ static unsigned char ideal_nop4_arm_be[4] = { 0xe1, 0xa0, 0x00, 0x00 }; /* mov r0, r0 */
+@@ -447,6 +423,49 @@
+ 	}).r_info;
+ }
+ 
++static unsigned char ideal_nop5_x86_64[5] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
++static unsigned char ideal_nop6_x86_64[6] = { 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00 };
++static unsigned char ideal_nop5_x86_32[5] = { 0x3e, 0x8d, 0x74, 0x26, 0x00 };
++static size_t ideal_nop_x86_size;
++
++static unsigned char stub_default_x86[2] = { 0xe8, 0x00 };   /* call relative */
++static unsigned char stub_got_x86[3] = { 0xff, 0x15, 0x00 }; /* call .got */
++static unsigned char *stub_x86;
++static size_t stub_x86_size;
++
++static int make_nop_x86(void *map, size_t const offset)
++{
++	uint32_t *ptr;
++	size_t stub_offset = offset - stub_x86_size;
++
++	/* confirm we have the expected stub */
++	ptr = map + stub_offset;
++	if (memcmp(ptr, stub_x86, stub_x86_size))
++		return -1;
++
++	/* convert to nop */
++	ulseek(fd_map, stub_offset, SEEK_SET);
++	uwrite(fd_map, ideal_nop, ideal_nop_x86_size);
++	return 0;
++}
++
++/* Swap the stub and nop for a got call if the binary is built with PIE */
++static int is_fake_mcount_x86_x64(Elf64_Rel const *rp)
++{
++	if (ELF64_R_TYPE(rp->r_info) == R_X86_64_GOTPCREL) {
++		ideal_nop = ideal_nop6_x86_64;
++		ideal_nop_x86_size = sizeof(ideal_nop6_x86_64);
++		stub_x86 = stub_got_x86;
++		stub_x86_size = sizeof(stub_got_x86);
++		mcount_adjust_64 = 1 - stub_x86_size;
++	}
++
++	/* Once the relocation was checked, rollback to default */
++	is_fake_mcount64 = fn_is_fake_mcount64;
++	return is_fake_mcount64(rp);
++}
++
++
+ static void
+ do_file(char const *const fname)
+ {
+@@ -509,6 +528,9 @@
+ 		rel_type_nop = R_386_NONE;
+ 		make_nop = make_nop_x86;
+ 		ideal_nop = ideal_nop5_x86_32;
++		ideal_nop_x86_size = sizeof(ideal_nop5_x86_32);
++		stub_x86 = stub_default_x86;
++		stub_x86_size = sizeof(stub_default_x86);
+ 		mcount_adjust_32 = -1;
+ 		break;
+ 	case EM_ARM:	 reltype = R_ARM_ABS32;
+@@ -533,9 +555,13 @@
+ 	case EM_X86_64:
+ 		make_nop = make_nop_x86;
+ 		ideal_nop = ideal_nop5_x86_64;
++		ideal_nop_x86_size = sizeof(ideal_nop5_x86_64);
++		stub_x86 = stub_default_x86;
++		stub_x86_size = sizeof(stub_default_x86);
+ 		reltype = R_X86_64_64;
+ 		rel_type_nop = R_X86_64_NONE;
+-		mcount_adjust_64 = -1;
++		is_fake_mcount64 = is_fake_mcount_x86_x64;
++		mcount_adjust_64 = 1 - stub_x86_size;
+ 		break;
+ 	}  /* end switch */
+ 

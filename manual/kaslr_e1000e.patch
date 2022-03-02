@@ -1,0 +1,1207 @@
+diff --git a/drivers/net/ethernet/intel/e1000e/80003es2lan.c b/drivers/net/ethernet/intel/e1000e/80003es2lan.c
+index 257bd59bc..a488b5056 100644
+--- a/drivers/net/ethernet/intel/e1000e/80003es2lan.c
++++ b/drivers/net/ethernet/intel/e1000e/80003es2lan.c
+@@ -11,7 +11,7 @@
+  * with a lower bound at "index" and the upper bound at
+  * "index + 5".
+  */
+-static const u16 e1000_gg82563_cable_length_table[] = {
++const u16 e1000_gg82563_cable_length_table[] = {
+ 	0, 60, 115, 150, 150, 60, 115, 150, 180, 180, 0xFF
+ };
+ 
+@@ -1324,7 +1324,7 @@ static void e1000_clear_hw_cntrs_80003es2lan(struct e1000_hw *hw)
+ 	er32(ICRXDMTC);
+ }
+ 
+-static const struct e1000_mac_operations es2_mac_ops = {
++const struct e1000_mac_operations es2_mac_ops = {
+ 	.read_mac_addr		= e1000_read_mac_addr_80003es2lan,
+ 	.id_led_init		= e1000e_id_led_init_generic,
+ 	.blink_led		= e1000e_blink_led_generic,
+@@ -1350,7 +1350,7 @@ static const struct e1000_mac_operations es2_mac_ops = {
+ 	.rar_get_count		= e1000e_rar_get_count_generic,
+ };
+ 
+-static const struct e1000_phy_operations es2_phy_ops = {
++const struct e1000_phy_operations es2_phy_ops = {
+ 	.acquire		= e1000_acquire_phy_80003es2lan,
+ 	.check_polarity		= e1000_check_polarity_m88,
+ 	.check_reset_block	= e1000e_check_reset_block_generic,
+@@ -1368,7 +1368,7 @@ static const struct e1000_phy_operations es2_phy_ops = {
+ 	.cfg_on_link_up		= e1000_cfg_on_link_up_80003es2lan,
+ };
+ 
+-static const struct e1000_nvm_operations es2_nvm_ops = {
++const struct e1000_nvm_operations es2_nvm_ops = {
+ 	.acquire		= e1000_acquire_nvm_80003es2lan,
+ 	.read			= e1000e_read_nvm_eerd,
+ 	.release		= e1000_release_nvm_80003es2lan,
+diff --git a/drivers/net/ethernet/intel/e1000e/82571.c b/drivers/net/ethernet/intel/e1000e/82571.c
+index b9309302c..e1c507a57 100644
+--- a/drivers/net/ethernet/intel/e1000e/82571.c
++++ b/drivers/net/ethernet/intel/e1000e/82571.c
+@@ -1852,7 +1852,7 @@ static void e1000_clear_hw_cntrs_82571(struct e1000_hw *hw)
+ 	er32(ICRXDMTC);
+ }
+ 
+-static const struct e1000_mac_operations e82571_mac_ops = {
++const struct e1000_mac_operations e82571_mac_ops = {
+ 	/* .check_mng_mode: mac type dependent */
+ 	/* .check_for_link: media type dependent */
+ 	.id_led_init		= e1000e_id_led_init_generic,
+@@ -1877,7 +1877,7 @@ static const struct e1000_mac_operations e82571_mac_ops = {
+ 	.rar_get_count		= e1000e_rar_get_count_generic,
+ };
+ 
+-static const struct e1000_phy_operations e82_phy_ops_igp = {
++const struct e1000_phy_operations e82_phy_ops_igp = {
+ 	.acquire		= e1000_get_hw_semaphore_82571,
+ 	.check_polarity		= e1000_check_polarity_igp,
+ 	.check_reset_block	= e1000e_check_reset_block_generic,
+@@ -1895,7 +1895,7 @@ static const struct e1000_phy_operations e82_phy_ops_igp = {
+ 	.cfg_on_link_up		= NULL,
+ };
+ 
+-static const struct e1000_phy_operations e82_phy_ops_m88 = {
++const struct e1000_phy_operations e82_phy_ops_m88 = {
+ 	.acquire		= e1000_get_hw_semaphore_82571,
+ 	.check_polarity		= e1000_check_polarity_m88,
+ 	.check_reset_block	= e1000e_check_reset_block_generic,
+@@ -1913,7 +1913,7 @@ static const struct e1000_phy_operations e82_phy_ops_m88 = {
+ 	.cfg_on_link_up		= NULL,
+ };
+ 
+-static const struct e1000_phy_operations e82_phy_ops_bm = {
++const struct e1000_phy_operations e82_phy_ops_bm = {
+ 	.acquire		= e1000_get_hw_semaphore_82571,
+ 	.check_polarity		= e1000_check_polarity_m88,
+ 	.check_reset_block	= e1000e_check_reset_block_generic,
+@@ -1931,7 +1931,7 @@ static const struct e1000_phy_operations e82_phy_ops_bm = {
+ 	.cfg_on_link_up		= NULL,
+ };
+ 
+-static const struct e1000_nvm_operations e82571_nvm_ops = {
++const struct e1000_nvm_operations e82571_nvm_ops = {
+ 	.acquire		= e1000_acquire_nvm_82571,
+ 	.read			= e1000e_read_nvm_eerd,
+ 	.release		= e1000_release_nvm_82571,
+diff --git a/drivers/net/ethernet/intel/e1000e/Makefile b/drivers/net/ethernet/intel/e1000e/Makefile
+index 44e58b6e7..b9e0af2f8 100644
+--- a/drivers/net/ethernet/intel/e1000e/Makefile
++++ b/drivers/net/ethernet/intel/e1000e/Makefile
+@@ -5,6 +5,8 @@
+ # Makefile for the Intel(R) PRO/1000 ethernet driver
+ #
+ 
++EXTRA_CFLAGS = -fvisibility=default
++
+ obj-$(CONFIG_E1000E) += e1000e.o
+ 
+ e1000e-objs := 82571.o ich8lan.o 80003es2lan.o \
+diff --git a/drivers/net/ethernet/intel/e1000e/e1000.h b/drivers/net/ethernet/intel/e1000e/e1000.h
+index be13227f1..895187e41 100644
+--- a/drivers/net/ethernet/intel/e1000e/e1000.h
++++ b/drivers/net/ethernet/intel/e1000e/e1000.h
+@@ -23,8 +23,19 @@
+ #include <linux/mii.h>
+ #include <linux/mdio.h>
+ #include <linux/pm_qos.h>
++#include <linux/module.h>
+ #include "hw.h"
+ 
++// TODO: Remove
++#ifndef SPECIAL_VAR
++/* These are for IDE */
++#define SPECIAL_VAR(x) x
++#define SPECIAL_CONST_VAR(x) x
++#define SPECIAL_FUNCTION_PROTO(ret, name, args...) ret name (args)
++#define SPECIAL_FUNCTION(ret, name, args...) ret name (args)
++#error "Could not find wrappers"
++#endif
++
+ struct e1000_info;
+ 
+ #define e_dbg(format, arg...) \
+@@ -466,8 +477,8 @@ extern const char e1000e_driver_version[];
+ void e1000e_check_options(struct e1000_adapter *adapter);
+ void e1000e_set_ethtool_ops(struct net_device *netdev);
+ 
+-int e1000e_open(struct net_device *netdev);
+-int e1000e_close(struct net_device *netdev);
++SPECIAL_FUNCTION_PROTO(int, e1000e_open, struct net_device *netdev);
++SPECIAL_FUNCTION_PROTO(int, e1000e_close, struct net_device *netdev);
+ void e1000e_up(struct e1000_adapter *adapter);
+ void e1000e_down(struct e1000_adapter *adapter, bool reset);
+ void e1000e_reinit_locked(struct e1000_adapter *adapter);
+diff --git a/drivers/net/ethernet/intel/e1000e/ethtool.c b/drivers/net/ethernet/intel/e1000e/ethtool.c
+index 02ebf208f..b42daed5c 100644
+--- a/drivers/net/ethernet/intel/e1000e/ethtool.c
++++ b/drivers/net/ethernet/intel/e1000e/ethtool.c
+@@ -34,7 +34,7 @@ struct e1000_stats {
+ 		.sizeof_stat = sizeof(((struct rtnl_link_stats64 *)0)->m), \
+ 		.stat_offset = offsetof(struct rtnl_link_stats64, m) }
+ 
+-static const struct e1000_stats e1000_gstrings_stats[] = {
++const struct e1000_stats e1000_gstrings_stats[] = {
+ 	E1000_STAT("rx_packets", stats.gprc),
+ 	E1000_STAT("tx_packets", stats.gptc),
+ 	E1000_STAT("rx_bytes", stats.gorc),
+@@ -92,7 +92,7 @@ static const struct e1000_stats e1000_gstrings_stats[] = {
+ 
+ #define E1000_GLOBAL_STATS_LEN	ARRAY_SIZE(e1000_gstrings_stats)
+ #define E1000_STATS_LEN (E1000_GLOBAL_STATS_LEN)
+-static const char e1000_gstrings_test[][ETH_GSTRING_LEN] = {
++const char e1000_gstrings_test[][ETH_GSTRING_LEN] = {
+ 	"Register test  (offline)", "Eeprom test    (offline)",
+ 	"Interrupt test (offline)", "Loopback test  (offline)",
+ 	"Link test   (on/offline)"
+@@ -100,7 +100,7 @@ static const char e1000_gstrings_test[][ETH_GSTRING_LEN] = {
+ 
+ #define E1000_TEST_LEN ARRAY_SIZE(e1000_gstrings_test)
+ 
+-static int e1000_get_link_ksettings(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_get_link_ksettings, struct net_device *netdev,
+ 				    struct ethtool_link_ksettings *cmd)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -248,7 +248,7 @@ err_inval:
+ 	return -EINVAL;
+ }
+ 
+-static int e1000_set_link_ksettings(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_link_ksettings, struct net_device *netdev,
+ 				    const struct ethtool_link_ksettings *cmd)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -337,7 +337,7 @@ out:
+ 	return ret_val;
+ }
+ 
+-static void e1000_get_pauseparam(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_pauseparam, struct net_device *netdev,
+ 				 struct ethtool_pauseparam *pause)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -356,7 +356,7 @@ static void e1000_get_pauseparam(struct net_device *netdev,
+ 	}
+ }
+ 
+-static int e1000_set_pauseparam(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_pauseparam, struct net_device *netdev,
+ 				struct ethtool_pauseparam *pause)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -407,25 +407,25 @@ out:
+ 	return retval;
+ }
+ 
+-static u32 e1000_get_msglevel(struct net_device *netdev)
++SPECIAL_FUNCTION(u32, e1000_get_msglevel, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	return adapter->msg_enable;
+ }
+ 
+-static void e1000_set_msglevel(struct net_device *netdev, u32 data)
++SPECIAL_FUNCTION(void, e1000_set_msglevel, struct net_device *netdev, u32 data)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	adapter->msg_enable = data;
+ }
+ 
+-static int e1000_get_regs_len(struct net_device __always_unused *netdev)
++SPECIAL_FUNCTION(int, e1000_get_regs_len, struct net_device __always_unused *netdev)
+ {
+ #define E1000_REGS_LEN 32	/* overestimate */
+ 	return E1000_REGS_LEN * sizeof(u32);
+ }
+ 
+-static void e1000_get_regs(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_regs, struct net_device *netdev,
+ 			   struct ethtool_regs *regs, void *p)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -484,13 +484,13 @@ static void e1000_get_regs(struct net_device *netdev,
+ 	pm_runtime_put_sync(netdev->dev.parent);
+ }
+ 
+-static int e1000_get_eeprom_len(struct net_device *netdev)
++SPECIAL_FUNCTION(int, e1000_get_eeprom_len, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	return adapter->hw.nvm.word_size * 2;
+ }
+ 
+-static int e1000_get_eeprom(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_get_eeprom, struct net_device *netdev,
+ 			    struct ethtool_eeprom *eeprom, u8 *bytes)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -547,7 +547,7 @@ static int e1000_get_eeprom(struct net_device *netdev,
+ 	return ret_val;
+ }
+ 
+-static int e1000_set_eeprom(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_eeprom, struct net_device *netdev,
+ 			    struct ethtool_eeprom *eeprom, u8 *bytes)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -627,7 +627,7 @@ out:
+ 	return ret_val;
+ }
+ 
+-static void e1000_get_drvinfo(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_drvinfo, struct net_device *netdev,
+ 			      struct ethtool_drvinfo *drvinfo)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -649,7 +649,7 @@ static void e1000_get_drvinfo(struct net_device *netdev,
+ 		sizeof(drvinfo->bus_info));
+ }
+ 
+-static void e1000_get_ringparam(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_ringparam, struct net_device *netdev,
+ 				struct ethtool_ringparam *ring)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -660,7 +660,7 @@ static void e1000_get_ringparam(struct net_device *netdev,
+ 	ring->tx_pending = adapter->tx_ring_count;
+ }
+ 
+-static int e1000_set_ringparam(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_ringparam, struct net_device *netdev,
+ 			       struct ethtool_ringparam *ring)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -968,7 +968,7 @@ static int e1000_eeprom_test(struct e1000_adapter *adapter, u64 *data)
+ 	return *data;
+ }
+ 
+-static irqreturn_t e1000_test_intr(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_test_intr, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = (struct net_device *)data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1767,7 +1767,7 @@ static int e1000_link_test(struct e1000_adapter *adapter, u64 *data)
+ 	return *data;
+ }
+ 
+-static int e1000e_get_sset_count(struct net_device __always_unused *netdev,
++SPECIAL_FUNCTION(int, e1000e_get_sset_count, struct net_device __always_unused *netdev,
+ 				 int sset)
+ {
+ 	switch (sset) {
+@@ -1780,7 +1780,7 @@ static int e1000e_get_sset_count(struct net_device __always_unused *netdev,
+ 	}
+ }
+ 
+-static void e1000_diag_test(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_diag_test, struct net_device *netdev,
+ 			    struct ethtool_test *eth_test, u64 *data)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1880,7 +1880,7 @@ static void e1000_diag_test(struct net_device *netdev,
+ 	pm_runtime_put_sync(netdev->dev.parent);
+ }
+ 
+-static void e1000_get_wol(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_wol, struct net_device *netdev,
+ 			  struct ethtool_wolinfo *wol)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1915,7 +1915,7 @@ static void e1000_get_wol(struct net_device *netdev,
+ 		wol->wolopts |= WAKE_PHY;
+ }
+ 
+-static int e1000_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
++SPECIAL_FUNCTION(int, e1000_set_wol, struct net_device *netdev, struct ethtool_wolinfo *wol)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 
+@@ -1944,7 +1944,7 @@ static int e1000_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
+ 	return 0;
+ }
+ 
+-static int e1000_set_phys_id(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_phys_id, struct net_device *netdev,
+ 			     enum ethtool_phys_id_state state)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1980,7 +1980,7 @@ static int e1000_set_phys_id(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static int e1000_get_coalesce(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_get_coalesce, struct net_device *netdev,
+ 			      struct ethtool_coalesce *ec)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1993,7 +1993,7 @@ static int e1000_get_coalesce(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static int e1000_set_coalesce(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_coalesce, struct net_device *netdev,
+ 			      struct ethtool_coalesce *ec)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -2027,7 +2027,7 @@ static int e1000_set_coalesce(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static int e1000_nway_reset(struct net_device *netdev)
++SPECIAL_FUNCTION(int, e1000_nway_reset, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 
+@@ -2044,7 +2044,7 @@ static int e1000_nway_reset(struct net_device *netdev)
+ 	return 0;
+ }
+ 
+-static void e1000_get_ethtool_stats(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000_get_ethtool_stats, struct net_device *netdev,
+ 				    struct ethtool_stats __always_unused *stats,
+ 				    u64 *data)
+ {
+@@ -2079,7 +2079,7 @@ static void e1000_get_ethtool_stats(struct net_device *netdev,
+ 	}
+ }
+ 
+-static void e1000_get_strings(struct net_device __always_unused *netdev,
++SPECIAL_FUNCTION(void, e1000_get_strings, struct net_device __always_unused *netdev,
+ 			      u32 stringset, u8 *data)
+ {
+ 	u8 *p = data;
+@@ -2099,7 +2099,7 @@ static void e1000_get_strings(struct net_device __always_unused *netdev,
+ 	}
+ }
+ 
+-static int e1000_get_rxnfc(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_get_rxnfc, struct net_device *netdev,
+ 			   struct ethtool_rxnfc *info,
+ 			   u32 __always_unused *rule_locs)
+ {
+@@ -2151,7 +2151,7 @@ static int e1000_get_rxnfc(struct net_device *netdev,
+ 	}
+ }
+ 
+-static int e1000e_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
++SPECIAL_FUNCTION(int, e1000e_get_eee, struct net_device *netdev, struct ethtool_eee *edata)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -2227,7 +2227,7 @@ release:
+ 	return ret_val;
+ }
+ 
+-static int e1000e_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
++SPECIAL_FUNCTION(int, e1000e_set_eee, struct net_device *netdev, struct ethtool_eee *edata)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -2270,7 +2270,7 @@ static int e1000e_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
+ 	return 0;
+ }
+ 
+-static int e1000e_get_ts_info(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000e_get_ts_info, struct net_device *netdev,
+ 			      struct ethtool_ts_info *info)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -2304,7 +2304,8 @@ static int e1000e_get_ts_info(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static const struct ethtool_ops e1000_ethtool_ops = {
++
++SPECIAL_CONST_VAR(const struct ethtool_ops e1000_ethtool_ops) = {
+ 	.get_drvinfo		= e1000_get_drvinfo,
+ 	.get_regs_len		= e1000_get_regs_len,
+ 	.get_regs		= e1000_get_regs,
+diff --git a/drivers/net/ethernet/intel/e1000e/ich8lan.c b/drivers/net/ethernet/intel/e1000e/ich8lan.c
+index cdae0efde..5cb824229 100644
+--- a/drivers/net/ethernet/intel/e1000e/ich8lan.c
++++ b/drivers/net/ethernet/intel/e1000e/ich8lan.c
+@@ -5719,7 +5719,7 @@ release:
+ 	}
+ }
+ 
+-static const struct e1000_mac_operations ich8_mac_ops = {
++const struct e1000_mac_operations ich8_mac_ops = {
+ 	/* check_mng_mode dependent on mac type */
+ 	.check_for_link		= e1000_check_for_copper_link_ich8lan,
+ 	/* cleanup_led dependent on mac type */
+@@ -5740,7 +5740,7 @@ static const struct e1000_mac_operations ich8_mac_ops = {
+ 	.rar_get_count		= e1000e_rar_get_count_generic,
+ };
+ 
+-static const struct e1000_phy_operations ich8_phy_ops = {
++const struct e1000_phy_operations ich8_phy_ops = {
+ 	.acquire		= e1000_acquire_swflag_ich8lan,
+ 	.check_reset_block	= e1000_check_reset_block_ich8lan,
+ 	.commit			= NULL,
+@@ -5754,7 +5754,7 @@ static const struct e1000_phy_operations ich8_phy_ops = {
+ 	.write_reg		= e1000e_write_phy_reg_igp,
+ };
+ 
+-static const struct e1000_nvm_operations ich8_nvm_ops = {
++const struct e1000_nvm_operations ich8_nvm_ops = {
+ 	.acquire		= e1000_acquire_nvm_ich8lan,
+ 	.read			= e1000_read_nvm_ich8lan,
+ 	.release		= e1000_release_nvm_ich8lan,
+@@ -5765,7 +5765,7 @@ static const struct e1000_nvm_operations ich8_nvm_ops = {
+ 	.write			= e1000_write_nvm_ich8lan,
+ };
+ 
+-static const struct e1000_nvm_operations spt_nvm_ops = {
++const struct e1000_nvm_operations spt_nvm_ops = {
+ 	.acquire		= e1000_acquire_nvm_ich8lan,
+ 	.release		= e1000_release_nvm_ich8lan,
+ 	.read			= e1000_read_nvm_spt,
+diff --git a/drivers/net/ethernet/intel/e1000e/netdev.c b/drivers/net/ethernet/intel/e1000e/netdev.c
+index 189f23107..a228bd078 100644
+--- a/drivers/net/ethernet/intel/e1000e/netdev.c
++++ b/drivers/net/ethernet/intel/e1000e/netdev.c
+@@ -28,10 +28,12 @@
+ 
+ #include "e1000.h"
+ 
++MODULE_INFO(randomizable, "Y");
++
+ #define DRV_EXTRAVERSION "-k"
+ 
+ #define DRV_VERSION "3.2.6" DRV_EXTRAVERSION
+-char e1000e_driver_name[] = "e1000e";
++SPECIAL_VAR(char e1000e_driver_name[]) = "e1000e";
+ const char e1000e_driver_version[] = DRV_VERSION;
+ 
+ #define DEFAULT_MSG_ENABLE (NETIF_MSG_DRV|NETIF_MSG_PROBE|NETIF_MSG_LINK)
+@@ -39,7 +41,7 @@ static int debug = -1;
+ module_param(debug, int, 0);
+ MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+ 
+-static const struct e1000_info *e1000_info_tbl[] = {
++const struct e1000_info *e1000_info_tbl[] = {
+ 	[board_82571]		= &e1000_82571_info,
+ 	[board_82572]		= &e1000_82572_info,
+ 	[board_82573]		= &e1000_82573_info,
+@@ -61,7 +63,7 @@ struct e1000_reg_info {
+ 	char *name;
+ };
+ 
+-static const struct e1000_reg_info e1000_reg_info_tbl[] = {
++const struct e1000_reg_info e1000_reg_info_tbl[] = {
+ 	/* General Registers */
+ 	{E1000_CTRL, "CTRL"},
+ 	{E1000_STATUS, "STATUS"},
+@@ -641,7 +643,7 @@ static void e1000e_update_tdt_wa(struct e1000_ring *tx_ring, unsigned int i)
+  * e1000_alloc_rx_buffers - Replace used receive buffers
+  * @rx_ring: Rx descriptor ring
+  **/
+-static void e1000_alloc_rx_buffers(struct e1000_ring *rx_ring,
++SPECIAL_FUNCTION(void, e1000_alloc_rx_buffers, struct e1000_ring *rx_ring,
+ 				   int cleaned_count, gfp_t gfp)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -709,7 +711,7 @@ map_skb:
+  * e1000_alloc_rx_buffers_ps - Replace used receive buffers; packet split
+  * @rx_ring: Rx descriptor ring
+  **/
+-static void e1000_alloc_rx_buffers_ps(struct e1000_ring *rx_ring,
++SPECIAL_FUNCTION(void, e1000_alloc_rx_buffers_ps, struct e1000_ring *rx_ring,
+ 				      int cleaned_count, gfp_t gfp)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -813,7 +815,7 @@ no_buffers:
+  * @cleaned_count: number of buffers to allocate this pass
+  **/
+ 
+-static void e1000_alloc_jumbo_rx_buffers(struct e1000_ring *rx_ring,
++SPECIAL_FUNCTION(void, e1000_alloc_jumbo_rx_buffers, struct e1000_ring *rx_ring,
+ 					 int cleaned_count, gfp_t gfp)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -904,7 +906,7 @@ static inline void e1000_rx_hash(struct net_device *netdev, __le32 rss,
+  * the return value indicates whether actual cleaning was done, there
+  * is no guarantee that everything was cleaned
+  **/
+-static bool e1000_clean_rx_irq(struct e1000_ring *rx_ring, int *work_done,
++SPECIAL_FUNCTION(bool, e1000_clean_rx_irq, struct e1000_ring *rx_ring, int *work_done,
+ 			       int work_to_do)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -1077,7 +1079,7 @@ static void e1000_put_txbuf(struct e1000_ring *tx_ring,
+ 	buffer_info->time_stamp = 0;
+ }
+ 
+-static void e1000_print_hw_hang(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000_print_hw_hang, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work,
+ 						     struct e1000_adapter,
+@@ -1162,7 +1164,7 @@ static void e1000_print_hw_hang(struct work_struct *work)
+  * timestamp has been taken for the current stored skb.  The timestamp must
+  * be for this skb because only one such packet is allowed in the queue.
+  */
+-static void e1000e_tx_hwtstamp_work(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000e_tx_hwtstamp_work, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work, struct e1000_adapter,
+ 						     tx_hwtstamp_work);
+@@ -1298,7 +1300,7 @@ static bool e1000_clean_tx_irq(struct e1000_ring *tx_ring)
+  * the return value indicates whether actual cleaning was done, there
+  * is no guarantee that everything was cleaned
+  **/
+-static bool e1000_clean_rx_irq_ps(struct e1000_ring *rx_ring, int *work_done,
++SPECIAL_FUNCTION(bool, e1000_clean_rx_irq_ps, struct e1000_ring *rx_ring, int *work_done,
+ 				  int work_to_do)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -1503,7 +1505,7 @@ static void e1000_consume_page(struct e1000_buffer *bi, struct sk_buff *skb,
+  * the return value indicates whether actual cleaning was done, there
+  * is no guarantee that everything was cleaned
+  **/
+-static bool e1000_clean_jumbo_rx_irq(struct e1000_ring *rx_ring, int *work_done,
++SPECIAL_FUNCTION(bool, e1000_clean_jumbo_rx_irq, struct e1000_ring *rx_ring, int *work_done,
+ 				     int work_to_do)
+ {
+ 	struct e1000_adapter *adapter = rx_ring->adapter;
+@@ -1732,7 +1734,7 @@ static void e1000_clean_rx_ring(struct e1000_ring *rx_ring)
+ 	adapter->flags2 &= ~FLAG2_IS_DISCARDING;
+ }
+ 
+-static void e1000e_downshift_workaround(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000e_downshift_workaround, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work,
+ 						     struct e1000_adapter,
+@@ -1749,7 +1751,7 @@ static void e1000e_downshift_workaround(struct work_struct *work)
+  * @irq: interrupt number
+  * @data: pointer to a network interface device structure
+  **/
+-static irqreturn_t e1000_intr_msi(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr_msi, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1816,7 +1818,7 @@ static irqreturn_t e1000_intr_msi(int __always_unused irq, void *data)
+  * @irq: interrupt number
+  * @data: pointer to a network interface device structure
+  **/
+-static irqreturn_t e1000_intr(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1891,7 +1893,7 @@ static irqreturn_t e1000_intr(int __always_unused irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
+-static irqreturn_t e1000_msix_other(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_msix_other, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1914,7 +1916,7 @@ static irqreturn_t e1000_msix_other(int __always_unused irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
+-static irqreturn_t e1000_intr_msix_tx(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr_msix_tx, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -1934,7 +1936,7 @@ static irqreturn_t e1000_intr_msix_tx(int __always_unused irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
+-static irqreturn_t e1000_intr_msix_rx(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr_msix_rx, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -2653,7 +2655,7 @@ err:
+  * @napi: struct associated with this polling callback
+  * @budget: number of packets driver is allowed to process this poll
+  **/
+-static int e1000e_poll(struct napi_struct *napi, int budget)
++SPECIAL_FUNCTION(int, e1000e_poll, struct napi_struct *napi, int budget)
+ {
+ 	struct e1000_adapter *adapter = container_of(napi, struct e1000_adapter,
+ 						     napi);
+@@ -2689,7 +2691,7 @@ static int e1000e_poll(struct napi_struct *napi, int budget)
+ 	return work_done;
+ }
+ 
+-static int e1000_vlan_rx_add_vid(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_vlan_rx_add_vid, struct net_device *netdev,
+ 				 __always_unused __be16 proto, u16 vid)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -2715,7 +2717,7 @@ static int e1000_vlan_rx_add_vid(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static int e1000_vlan_rx_kill_vid(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_vlan_rx_kill_vid, struct net_device *netdev,
+ 				  __always_unused __be16 proto, u16 vid)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -3394,7 +3396,7 @@ static int e1000e_write_uc_addr_list(struct net_device *netdev)
+  * responsible for configuring the hardware for proper unicast, multicast,
+  * promiscuous mode, and all-multi behavior.
+  **/
+-static void e1000e_set_rx_mode(struct net_device *netdev)
++SPECIAL_FUNCTION(void, e1000e_set_rx_mode, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -4463,7 +4465,7 @@ static int e1000_sw_init(struct e1000_adapter *adapter)
+  * @irq: interrupt number
+  * @data: pointer to a network interface device structure
+  **/
+-static irqreturn_t e1000_intr_msi_test(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr_msi_test,int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -4593,7 +4595,7 @@ static int e1000_test_msi(struct e1000_adapter *adapter)
+  * handler is registered with the OS, the watchdog timer is started,
+  * and the stack is notified that the interface is ready.
+  **/
+-int e1000e_open(struct net_device *netdev)
++SPECIAL_FUNCTION(int, e1000e_open, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -4701,7 +4703,7 @@ err_setup_tx:
+  * needs to be disabled.  A global MAC reset is issued to stop the
+  * hardware, and all transmit and receive resources are freed.
+  **/
+-int e1000e_close(struct net_device *netdev)
++SPECIAL_FUNCTION(int, e1000e_close, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct pci_dev *pdev = adapter->pdev;
+@@ -4755,7 +4757,7 @@ int e1000e_close(struct net_device *netdev)
+  *
+  * Returns 0 on success, negative on failure
+  **/
+-static int e1000_set_mac(struct net_device *netdev, void *p)
++SPECIAL_FUNCTION(int, e1000_set_mac, struct net_device *netdev, void *p)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -4795,7 +4797,7 @@ static int e1000_set_mac(struct net_device *netdev, void *p)
+  * semaphore to read the phy, which we could msleep while
+  * waiting for it, and we can't msleep in a timer.
+  **/
+-static void e1000e_update_phy_task(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000e_update_phy_task, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work,
+ 						     struct e1000_adapter,
+@@ -4819,7 +4821,7 @@ static void e1000e_update_phy_task(struct work_struct *work)
+  * Need to wait a few seconds after link up to get diagnostic information from
+  * the phy
+  **/
+-static void e1000_update_phy_info(struct timer_list *t)
++SPECIAL_FUNCTION(void, e1000_update_phy_info, struct timer_list *t)
+ {
+ 	struct e1000_adapter *adapter = from_timer(adapter, t, phy_info_timer);
+ 
+@@ -5155,7 +5157,7 @@ static void e1000e_check_82574_phy_workaround(struct e1000_adapter *adapter)
+  * e1000_watchdog - Timer Call-back
+  * @data: pointer to adapter cast into an unsigned long
+  **/
+-static void e1000_watchdog(struct timer_list *t)
++SPECIAL_FUNCTION(void, e1000_watchdog, struct timer_list *t)
+ {
+ 	struct e1000_adapter *adapter = from_timer(adapter, t, watchdog_timer);
+ 
+@@ -5165,7 +5167,7 @@ static void e1000_watchdog(struct timer_list *t)
+ 	/* TODO: make this use queue_delayed_work() */
+ }
+ 
+-static void e1000_watchdog_task(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000_watchdog_task, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work,
+ 						     struct e1000_adapter,
+@@ -5767,7 +5769,7 @@ static int e1000_maybe_stop_tx(struct e1000_ring *tx_ring, int size)
+ 	return __e1000_maybe_stop_tx(tx_ring, size);
+ }
+ 
+-static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
++SPECIAL_FUNCTION(netdev_tx_t, e1000_xmit_frame, struct sk_buff *skb,
+ 				    struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -5927,7 +5929,7 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
+  * e1000_tx_timeout - Respond to a Tx Hang
+  * @netdev: network interface device structure
+  **/
+-static void e1000_tx_timeout(struct net_device *netdev)
++SPECIAL_FUNCTION(void, e1000_tx_timeout, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 
+@@ -5936,7 +5938,7 @@ static void e1000_tx_timeout(struct net_device *netdev)
+ 	schedule_work(&adapter->reset_task);
+ }
+ 
+-static void e1000_reset_task(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000_reset_task, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter;
+ 	adapter = container_of(work, struct e1000_adapter, reset_task);
+@@ -5959,7 +5961,7 @@ static void e1000_reset_task(struct work_struct *work)
+  *
+  * Returns the address of the device statistics structure.
+  **/
+-void e1000e_get_stats64(struct net_device *netdev,
++SPECIAL_FUNCTION(void, e1000e_get_stats64, struct net_device *netdev,
+ 			struct rtnl_link_stats64 *stats)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6005,7 +6007,7 @@ void e1000e_get_stats64(struct net_device *netdev,
+  *
+  * Returns 0 on success, negative on failure
+  **/
+-static int e1000_change_mtu(struct net_device *netdev, int new_mtu)
++SPECIAL_FUNCTION(int, e1000_change_mtu, struct net_device *netdev, int new_mtu)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	int max_frame = new_mtu + VLAN_ETH_HLEN + ETH_FCS_LEN;
+@@ -6183,7 +6185,7 @@ static int e1000e_hwtstamp_get(struct net_device *netdev, struct ifreq *ifr)
+ 			    sizeof(adapter->hwtstamp_config)) ? -EFAULT : 0;
+ }
+ 
+-static int e1000_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
++SPECIAL_FUNCTION(int, e1000_ioctl, struct net_device *netdev, struct ifreq *ifr, int cmd)
+ {
+ 	switch (cmd) {
+ 	case SIOCGMIIPHY:
+@@ -6295,7 +6297,7 @@ fl_out:
+ 	pm_runtime_put_sync(netdev->dev.parent);
+ }
+ 
+-static int e1000e_pm_freeze(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_freeze, struct device *dev)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(to_pci_dev(dev));
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6628,7 +6630,7 @@ static int __e1000_resume(struct pci_dev *pdev)
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+-static int e1000e_pm_thaw(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_thaw, struct device *dev)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(to_pci_dev(dev));
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6648,7 +6650,7 @@ static int e1000e_pm_thaw(struct device *dev)
+ 	return 0;
+ }
+ 
+-static int e1000e_pm_suspend(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_suspend, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	int rc;
+@@ -6664,7 +6666,7 @@ static int e1000e_pm_suspend(struct device *dev)
+ 	return rc;
+ }
+ 
+-static int e1000e_pm_resume(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_resume, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	int rc;
+@@ -6677,7 +6679,7 @@ static int e1000e_pm_resume(struct device *dev)
+ }
+ #endif /* CONFIG_PM_SLEEP */
+ 
+-static int e1000e_pm_runtime_idle(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_runtime_idle, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+@@ -6694,7 +6696,7 @@ static int e1000e_pm_runtime_idle(struct device *dev)
+ 	return -EBUSY;
+ }
+ 
+-static int e1000e_pm_runtime_resume(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_runtime_resume, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+@@ -6711,7 +6713,7 @@ static int e1000e_pm_runtime_resume(struct device *dev)
+ 	return rc;
+ }
+ 
+-static int e1000e_pm_runtime_suspend(struct device *dev)
++SPECIAL_FUNCTION(int, e1000e_pm_runtime_suspend, struct device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev);
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+@@ -6738,7 +6740,7 @@ static int e1000e_pm_runtime_suspend(struct device *dev)
+ }
+ #endif /* CONFIG_PM */
+ 
+-static void e1000_shutdown(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, e1000_shutdown, struct pci_dev *pdev)
+ {
+ 	e1000e_flush_lpic(pdev);
+ 
+@@ -6749,7 +6751,7 @@ static void e1000_shutdown(struct pci_dev *pdev)
+ 
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 
+-static irqreturn_t e1000_intr_msix(int __always_unused irq, void *data)
++SPECIAL_FUNCTION(irqreturn_t, e1000_intr_msix, int __always_unused irq, void *data)
+ {
+ 	struct net_device *netdev = data;
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6787,7 +6789,7 @@ static irqreturn_t e1000_intr_msix(int __always_unused irq, void *data)
+  * without having to re-enable interrupts. It's not called while
+  * the interrupt routine is executing.
+  */
+-static void e1000_netpoll(struct net_device *netdev)
++SPECIAL_FUNCTION(void, e1000_netpoll, struct net_device *netdev)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 
+@@ -6817,7 +6819,7 @@ static void e1000_netpoll(struct net_device *netdev)
+  * This function is called after a PCI bus error affecting
+  * this device has been detected.
+  */
+-static pci_ers_result_t e1000_io_error_detected(struct pci_dev *pdev,
++SPECIAL_FUNCTION(pci_ers_result_t, e1000_io_error_detected, struct pci_dev *pdev,
+ 						pci_channel_state_t state)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+@@ -6843,7 +6845,7 @@ static pci_ers_result_t e1000_io_error_detected(struct pci_dev *pdev,
+  * Restart the card from scratch, as if from a cold-boot. Implementation
+  * resembles the first-half of the e1000e_pm_resume routine.
+  */
+-static pci_ers_result_t e1000_io_slot_reset(struct pci_dev *pdev)
++SPECIAL_FUNCTION(pci_ers_result_t, e1000_io_slot_reset, struct pci_dev *pdev)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6888,7 +6890,7 @@ static pci_ers_result_t e1000_io_slot_reset(struct pci_dev *pdev)
+  * its OK to resume normal operation. Implementation resembles the
+  * second-half of the e1000e_pm_resume routine.
+  */
+-static void e1000_io_resume(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, e1000_io_resume, struct pci_dev *pdev)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6950,7 +6952,7 @@ static void e1000_eeprom_checks(struct e1000_adapter *adapter)
+ 	}
+ }
+ 
+-static netdev_features_t e1000_fix_features(struct net_device *netdev,
++SPECIAL_FUNCTION(netdev_features_t, e1000_fix_features, struct net_device *netdev,
+ 					    netdev_features_t features)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -6971,7 +6973,7 @@ static netdev_features_t e1000_fix_features(struct net_device *netdev,
+ 	return features;
+ }
+ 
+-static int e1000_set_features(struct net_device *netdev,
++SPECIAL_FUNCTION(int, e1000_set_features, struct net_device *netdev,
+ 			      netdev_features_t features)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -7009,7 +7011,8 @@ static int e1000_set_features(struct net_device *netdev,
+ 	return 0;
+ }
+ 
+-static const struct net_device_ops e1000e_netdev_ops = {
++
++SPECIAL_CONST_VAR(const struct net_device_ops e1000e_netdev_ops) = {
+ 	.ndo_open		= e1000e_open,
+ 	.ndo_stop		= e1000e_close,
+ 	.ndo_start_xmit		= e1000_xmit_frame,
+@@ -7031,6 +7034,9 @@ static const struct net_device_ops e1000e_netdev_ops = {
+ 	.ndo_features_check	= passthru_features_check,
+ };
+ 
++struct pci_dev *global_pdev_1 = NULL;
++struct pci_dev *global_pdev_2 = NULL;
++
+ /**
+  * e1000_probe - Device Initialization Routine
+  * @pdev: PCI device information struct
+@@ -7042,7 +7048,7 @@ static const struct net_device_ops e1000e_netdev_ops = {
+  * The OS initialization, configuring of the adapter private structure,
+  * and a hardware reset occur.
+  **/
+-static int e1000_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
++SPECIAL_FUNCTION(int, e1000_probe, struct pci_dev *pdev, const struct pci_device_id *ent)
+ {
+ 	struct net_device *netdev;
+ 	struct e1000_adapter *adapter;
+@@ -7354,6 +7360,11 @@ static int e1000_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	if (pci_dev_run_wake(pdev))
+ 		pm_runtime_put_noidle(&pdev->dev);
+ 
++	if(!global_pdev_1)
++		global_pdev_1 = pdev;
++	else
++		global_pdev_2 = pdev;
++
+ 	return 0;
+ 
+ err_register:
+@@ -7381,6 +7392,38 @@ err_dma:
+ 	return err;
+ }
+ 
++static void _e1000e_rerandomize(struct pci_dev *pdev, unsigned long delta)
++{
++	struct net_device *netdev;
++	struct e1000_adapter *adapter;
++	const struct e1000_info *ei;
++	struct e1000_hw *hw;
++
++	if(!pdev) return;
++
++	INC_BY_DELTA(adapter->ei, delta);
++
++	netdev = pci_get_drvdata(pdev);
++	adapter = netdev_priv(netdev);
++	ei = adapter->ei;
++	hw = &adapter->hw;
++
++	/* Should atomically copy 64bit words */
++	memcpy(&hw->mac.ops, ei->mac_ops, sizeof(hw->mac.ops));
++	memcpy(&hw->nvm.ops, ei->nvm_ops, sizeof(hw->nvm.ops));
++	memcpy(&hw->phy.ops, ei->phy_ops, sizeof(hw->phy.ops));
++
++	ei->get_variants(adapter);
++}
++
++static void e1000e_rerandomize(unsigned long delta)
++{
++	_e1000e_rerandomize(global_pdev_1, delta);
++	_e1000e_rerandomize(global_pdev_2, delta);
++}
++
++module_randomize(e1000e_rerandomize);
++
+ /**
+  * e1000_remove - Device Removal Routine
+  * @pdev: PCI device information struct
+@@ -7390,7 +7433,7 @@ err_dma:
+  * Hot-Plug event, or because the driver is going to be removed from
+  * memory.
+  **/
+-static void e1000_remove(struct pci_dev *pdev)
++SPECIAL_FUNCTION(void, e1000_remove, struct pci_dev *pdev)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+@@ -7452,13 +7495,13 @@ static void e1000_remove(struct pci_dev *pdev)
+ }
+ 
+ /* PCI Error Recovery (ERS) */
+-static const struct pci_error_handlers e1000_err_handler = {
++SPECIAL_CONST_VAR(const struct pci_error_handlers e1000_err_handler) = {
+ 	.error_detected = e1000_io_error_detected,
+ 	.slot_reset = e1000_io_slot_reset,
+ 	.resume = e1000_io_resume,
+ };
+ 
+-static const struct pci_device_id e1000_pci_tbl[] = {
++const struct pci_device_id e1000_pci_tbl[] = {
+ 	{ PCI_VDEVICE(INTEL, E1000_DEV_ID_82571EB_COPPER), board_82571 },
+ 	{ PCI_VDEVICE(INTEL, E1000_DEV_ID_82571EB_FIBER), board_82571 },
+ 	{ PCI_VDEVICE(INTEL, E1000_DEV_ID_82571EB_QUAD_COPPER), board_82571 },
+@@ -7557,7 +7600,7 @@ static const struct pci_device_id e1000_pci_tbl[] = {
+ };
+ MODULE_DEVICE_TABLE(pci, e1000_pci_tbl);
+ 
+-static const struct dev_pm_ops e1000_pm_ops = {
++const struct dev_pm_ops e1000_pm_ops = {
+ #ifdef CONFIG_PM_SLEEP
+ 	.suspend	= e1000e_pm_suspend,
+ 	.resume		= e1000e_pm_resume,
+@@ -7571,7 +7614,7 @@ static const struct dev_pm_ops e1000_pm_ops = {
+ };
+ 
+ /* PCI Device API Driver */
+-static struct pci_driver e1000_driver = {
++SPECIAL_VAR(struct pci_driver e1000_driver) = {
+ 	.name     = e1000e_driver_name,
+ 	.id_table = e1000_pci_tbl,
+ 	.probe    = e1000_probe,
+@@ -7613,7 +7656,7 @@ module_exit(e1000_exit_module);
+ 
+ MODULE_AUTHOR("Intel Corporation, <linux.nics@intel.com>");
+ MODULE_DESCRIPTION("Intel(R) PRO/1000 Network Driver");
+-MODULE_LICENSE("GPL v2");
++MODULE_LICENSE("GPL");
+ MODULE_VERSION(DRV_VERSION);
+ 
+ /* netdev.c */
+diff --git a/drivers/net/ethernet/intel/e1000e/param.c b/drivers/net/ethernet/intel/e1000e/param.c
+index 098369fd3..a0f10917a 100644
+--- a/drivers/net/ethernet/intel/e1000e/param.c
++++ b/drivers/net/ethernet/intel/e1000e/param.c
+@@ -237,7 +237,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 
+ 	/* Transmit Interrupt Delay */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = range_option,
+ 			.name = "Transmit Interrupt Delay",
+ 			.err  = "using default of "
+@@ -257,7 +257,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* Transmit Absolute Interrupt Delay */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = range_option,
+ 			.name = "Transmit Absolute Interrupt Delay",
+ 			.err  = "using default of "
+@@ -323,7 +323,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* Interrupt Throttling Rate */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = range_option,
+ 			.name = "Interrupt Throttling Rate (ints/sec)",
+ 			.err  = "using default of "
+@@ -445,7 +445,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* Smart Power Down */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = enable_option,
+ 			.name = "PHY Smart Power Down",
+ 			.err  = "defaulting to Disabled",
+@@ -462,7 +462,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* CRC Stripping */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = enable_option,
+ 			.name = "CRC Stripping",
+ 			.err  = "defaulting to Enabled",
+@@ -484,7 +484,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* Kumeran Lock Loss Workaround */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = enable_option,
+ 			.name = "Kumeran Lock Loss Workaround",
+ 			.err  = "defaulting to Enabled",
+@@ -505,7 +505,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
+ 	}
+ 	/* Write-protect NVM */
+ 	{
+-		static const struct e1000_option opt = {
++		const struct e1000_option opt = {
+ 			.type = enable_option,
+ 			.name = "Write-protect NVM",
+ 			.err  = "defaulting to Enabled",
+diff --git a/drivers/net/ethernet/intel/e1000e/phy.c b/drivers/net/ethernet/intel/e1000e/phy.c
+index 422330192..d6f64c0d3 100644
+--- a/drivers/net/ethernet/intel/e1000e/phy.c
++++ b/drivers/net/ethernet/intel/e1000e/phy.c
+@@ -11,14 +11,14 @@ static s32 e1000_access_phy_debug_regs_hv(struct e1000_hw *hw, u32 offset,
+ 					  u16 *data, bool read);
+ 
+ /* Cable length tables */
+-static const u16 e1000_m88_cable_length_table[] = {
++const u16 e1000_m88_cable_length_table[] = {
+ 	0, 50, 80, 110, 140, 140, E1000_CABLE_LENGTH_UNDEFINED
+ };
+ 
+ #define M88E1000_CABLE_LENGTH_TABLE_SIZE \
+ 		ARRAY_SIZE(e1000_m88_cable_length_table)
+ 
+-static const u16 e1000_igp_2_cable_length_table[] = {
++const u16 e1000_igp_2_cable_length_table[] = {
+ 	0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 8, 11, 13, 16, 18, 21, 0, 0, 0, 3,
+ 	6, 10, 13, 16, 19, 23, 26, 29, 32, 35, 38, 41, 6, 10, 14, 18, 22,
+ 	26, 30, 33, 37, 41, 44, 48, 51, 54, 58, 61, 21, 26, 31, 35, 40,
+diff --git a/drivers/net/ethernet/intel/e1000e/ptp.c b/drivers/net/ethernet/intel/e1000e/ptp.c
+index 1a4c65d9f..f6e3e1cc6 100644
+--- a/drivers/net/ethernet/intel/e1000e/ptp.c
++++ b/drivers/net/ethernet/intel/e1000e/ptp.c
+@@ -22,7 +22,7 @@
+  * Adjust the frequency of the PHC cycle counter by the indicated delta from
+  * the base frequency.
+  **/
+-static int e1000e_phc_adjfreq(struct ptp_clock_info *ptp, s32 delta)
++SPECIAL_FUNCTION(int, e1000e_phc_adjfreq, struct ptp_clock_info *ptp, s32 delta)
+ {
+ 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
+ 						     ptp_clock_info);
+@@ -75,7 +75,7 @@ static int e1000e_phc_adjfreq(struct ptp_clock_info *ptp, s32 delta)
+  *
+  * Adjust the timer by resetting the timecounter structure.
+  **/
+-static int e1000e_phc_adjtime(struct ptp_clock_info *ptp, s64 delta)
++SPECIAL_FUNCTION(int, e1000e_phc_adjtime, struct ptp_clock_info *ptp, s64 delta)
+ {
+ 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
+ 						     ptp_clock_info);
+@@ -170,7 +170,7 @@ static int e1000e_phc_getcrosststamp(struct ptp_clock_info *ptp,
+  * Read the timecounter and return the correct value in ns after converting
+  * it into a struct timespec.
+  **/
+-static int e1000e_phc_gettimex(struct ptp_clock_info *ptp,
++SPECIAL_FUNCTION(int, e1000e_phc_gettimex, struct ptp_clock_info *ptp,
+ 			       struct timespec64 *ts,
+ 			       struct ptp_system_timestamp *sts)
+ {
+@@ -200,7 +200,7 @@ static int e1000e_phc_gettimex(struct ptp_clock_info *ptp,
+  * Reset the timecounter to use a new base value instead of the kernel
+  * wall timer value.
+  **/
+-static int e1000e_phc_settime(struct ptp_clock_info *ptp,
++SPECIAL_FUNCTION(int, e1000e_phc_settime, struct ptp_clock_info *ptp,
+ 			      const struct timespec64 *ts)
+ {
+ 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
+@@ -227,14 +227,14 @@ static int e1000e_phc_settime(struct ptp_clock_info *ptp,
+  * Enable (or disable) ancillary features of the PHC subsystem.
+  * Currently, no ancillary features are supported.
+  **/
+-static int e1000e_phc_enable(struct ptp_clock_info __always_unused *ptp,
++SPECIAL_FUNCTION(int, e1000e_phc_enable, struct ptp_clock_info __always_unused *ptp,
+ 			     struct ptp_clock_request __always_unused *request,
+ 			     int __always_unused on)
+ {
+ 	return -EOPNOTSUPP;
+ }
+ 
+-static void e1000e_systim_overflow_work(struct work_struct *work)
++SPECIAL_FUNCTION(void, e1000e_systim_overflow_work, struct work_struct *work)
+ {
+ 	struct e1000_adapter *adapter = container_of(work, struct e1000_adapter,
+ 						     systim_overflow_work.work);
+@@ -253,7 +253,7 @@ static void e1000e_systim_overflow_work(struct work_struct *work)
+ 			      E1000_SYSTIM_OVERFLOW_PERIOD);
+ }
+ 
+-static const struct ptp_clock_info e1000e_ptp_clock_info = {
++SPECIAL_CONST_VAR(const struct ptp_clock_info e1000e_ptp_clock_info) = {
+ 	.owner		= THIS_MODULE,
+ 	.n_alarm	= 0,
+ 	.n_ext_ts	= 0,
